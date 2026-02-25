@@ -142,6 +142,10 @@ if build_tests:
     test_sources = Glob('tests/test_*.cpp')
     test_runner = test_env.Program('tests/test_runner', test_sources)
     Depends(test_runner, lib)
+    # On Windows the Program target is tests/test_runner.exe, so SCons can't
+    # resolve the bare `tests/test_runner` from the command line. Register an
+    # explicit alias so `scons tests/test_runner` works on all platforms.
+    Alias('tests/test_runner', test_runner)
 
     # `scons test` builds and runs the test suite
     test_run = test_env.Command(
