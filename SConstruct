@@ -26,7 +26,7 @@ else:
         CXXFLAGS=[
             '-std=c++20', '-Wall', '-Wextra', '-Wshadow',
             '-Wformat', '-Wformat-security', '-O2',
-            '-fstack-protector-strong', '-D_FORTIFY_SOURCE=2', '-fPIE',
+            '-fstack-protector-strong', '-D_FORTIFY_SOURCE=2', '-fPIC',
         ],
         LINKFLAGS=['-pie', '-Wl,-z,relro,-z,now'] if platform.startswith('linux') else [],
     )
