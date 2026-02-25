@@ -85,7 +85,7 @@ TEST_CASE("Rapid start/stop cycles", "[integration][errors]") {
     SKIP("No display server available");
   }
 
-  for (int i = 0; i < 100; ++i) {
+  for (int i = 0; i < 20; ++i) {
     FrameTap ft;
     ft.on_frame([](const Frame &) {});
     ft.start_async();

@@ -142,6 +142,7 @@ ImageData x11_take_screenshot(::Window target, Rect region,
 
   // Handle stride (bytes_per_line may differ from width * 4)
   int bpp = img->bits_per_pixel / 8;
+  int depth = img->depth;
   for (int y = 0; y < cap_h; y++) {
     const auto *src =
         reinterpret_cast<const uint8_t *>(img->data) + y * img->bytes_per_line;
@@ -153,6 +154,12 @@ ImageData x11_take_screenshot(::Window target, Rect region,
     } else {
       // Direct copy for RGBA or other formats
       std::memcpy(dst, src, static_cast<size_t>(cap_w) * 4);
+    }
+
+    // On 24-bit depth displays the alpha byte is unused (0); set to opaque.
+    if (depth <= 24 && bpp == 4) {
+      for (int x = 0; x < cap_w; x++)
+        dst[x * 4 + 3] = 0xFF;
     }
   }
 

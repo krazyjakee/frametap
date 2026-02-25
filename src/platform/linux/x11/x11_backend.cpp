@@ -237,15 +237,11 @@ void X11Backend::set_region(Rect region) {
 // ---------------------------------------------------------------------------
 
 ImageData X11Backend::capture_frame() {
-  // H1: Snapshot state under lock
-  int cx, cy, cw, ch;
-  {
-    std::lock_guard lock(state_mutex_);
-    cx = cap_x_;
-    cy = cap_y_;
-    cw = cap_w_;
-    ch = cap_h_;
-  }
+  // H1: Hold lock for the entire capture to prevent set_region() from
+  // reallocating SHM while we are reading from it.
+  std::lock_guard lock(state_mutex_);
+
+  int cx = cap_x_, cy = cap_y_, cw = cap_w_, ch = cap_h_;
 
   if (cw <= 0 || ch <= 0)
     return {};
@@ -267,6 +263,7 @@ ImageData X11Backend::capture_frame() {
       return {};
 
     int bpp = shm_image_->bits_per_pixel / 8;
+    int depth = shm_image_->depth;
     for (int y = 0; y < ch; y++) {
       const auto *src = reinterpret_cast<const uint8_t *>(shm_image_->data) +
                         y * shm_image_->bytes_per_line;
@@ -276,6 +273,11 @@ ImageData X11Backend::capture_frame() {
         bgra_to_rgba(src, dst, static_cast<size_t>(cw));
       } else {
         std::memcpy(dst, src, static_cast<size_t>(cw) * 4);
+      }
+
+      if (depth <= 24 && bpp == 4) {
+        for (int x = 0; x < cw; x++)
+          dst[x * 4 + 3] = 0xFF;
       }
     }
   } else {
@@ -290,6 +292,7 @@ ImageData X11Backend::capture_frame() {
     }
 
     int bpp = img->bits_per_pixel / 8;
+    int img_depth = img->depth;
     for (int y = 0; y < ch; y++) {
       const auto *src =
           reinterpret_cast<const uint8_t *>(img->data) + y * img->bytes_per_line;
@@ -299,6 +302,11 @@ ImageData X11Backend::capture_frame() {
         bgra_to_rgba(src, dst, static_cast<size_t>(cw));
       } else {
         std::memcpy(dst, src, static_cast<size_t>(cw) * 4);
+      }
+
+      if (img_depth <= 24 && bpp == 4) {
+        for (int x = 0; x < cw; x++)
+          dst[x * 4 + 3] = 0xFF;
       }
     }
     XDestroyImage(img);

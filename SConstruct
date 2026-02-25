@@ -28,7 +28,7 @@ else:
             '-Wformat', '-Wformat-security', '-O2',
             '-fstack-protector-strong', '-D_FORTIFY_SOURCE=2', '-fPIE',
         ],
-        LINKFLAGS=['-pie', '-Wl,-z,relro,-z,now'],
+        LINKFLAGS=['-pie', '-Wl,-z,relro,-z,now'] if platform.startswith('linux') else [],
     )
     if sanitize in ('address', 'thread', 'undefined'):
         san_flags = [f'-fsanitize={sanitize}', '-fno-omit-frame-pointer', '-g']
@@ -114,7 +114,9 @@ Depends(example, lib)
 Alias('example', example)
 
 # --- Test binary (optional: `scons test` or `scons tests/test_runner`) ---
-build_tests = any(t in COMMAND_LINE_TARGETS for t in ['test', 'tests/test_runner'])
+# Normalise path separators so `tests\test_runner` on Windows still matches.
+_targets = [t.replace('\\', '/') for t in COMMAND_LINE_TARGETS]
+build_tests = any(t in _targets for t in ['test', 'tests/test_runner'])
 
 if build_tests:
     test_env = env.Clone()
