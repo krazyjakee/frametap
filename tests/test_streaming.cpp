@@ -151,8 +151,8 @@ TEST_CASE("Pause suspends", "[integration][streaming]") {
   }
 
   ft.pause();
-  // Allow any in-flight frames to arrive after pause
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  // Allow any in-flight frames to arrive after pause (longer under sanitizers)
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
   int count_after_pause = frame_count.load();
 
   // Wait 500ms — no new frames should arrive during pause

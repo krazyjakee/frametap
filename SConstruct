@@ -127,6 +127,22 @@ if build_tests:
 
     if platform == 'darwin':
         test_env.Append(LINKFLAGS=['-lobjc'])
+        # Tests don't need to be universal binaries; Homebrew Catch2 is
+        # only built for the host architecture.  Strip multi-arch flags
+        # so the test binary links against the native Catch2.
+        for flag_list in ('CXXFLAGS', 'LINKFLAGS'):
+            flags = test_env[flag_list]
+            cleaned = []
+            skip_next = False
+            for f in flags:
+                if skip_next:
+                    skip_next = False
+                    continue
+                if f == '-arch':
+                    skip_next = True
+                    continue
+                cleaned.append(f)
+            test_env[flag_list] = cleaned
 
     # Catch2 via pkg-config
     if platform == 'win32':
