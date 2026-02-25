@@ -1,0 +1,126 @@
+name: Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+          - os: ubuntu-latest
+            name: Linux
+          - os: windows-latest
+            name: Windows
+
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install SCons
+        run: pip install scons
+
+      # --- Linux dependencies ---
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev libxext-dev libxfixes-dev libxinerama-dev \
+            libpipewire-0.3-dev libsystemd-dev libwayland-dev \
+            catch2 \
+            xvfb \
+            pkg-config
+
+      # --- macOS dependencies ---
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install catch2
+
+      # --- Windows dependencies ---
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        run: |
+          vcpkg install catch2:x64-windows
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> $GITHUB_ENV
+        shell: bash
+
+      # --- Build ---
+      - name: Build static library
+        run: scons
+
+      - name: Build example
+        run: scons example
+
+      # --- Tests ---
+      - name: Build tests
+        run: scons tests/test_runner
+
+      - name: Run unit tests (headless)
+        run: ./tests/test_runner "[unit]" --colour-mode ansi
+        shell: bash
+
+      - name: Run integration tests (Linux with Xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 &
+          sleep 1
+          DISPLAY=:99 ./tests/test_runner "[integration]" --colour-mode ansi
+
+      - name: Run integration tests (macOS / Windows)
+        if: runner.os != 'Linux'
+        run: ./tests/test_runner "[integration]" --colour-mode ansi
+        shell: bash
+
+  sanitizers:
+    name: Linux (${{ matrix.sanitizer }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, thread, undefined]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libx11-dev libxext-dev libxfixes-dev libxinerama-dev \
+            libpipewire-0.3-dev libsystemd-dev libwayland-dev \
+            catch2 xvfb pkg-config
+          pip install scons
+
+      - name: Build with ${{ matrix.sanitizer }} sanitizer
+        run: scons sanitize=${{ matrix.sanitizer }}
+
+      - name: Build tests with ${{ matrix.sanitizer }} sanitizer
+        run: scons sanitize=${{ matrix.sanitizer }} tests/test_runner
+
+      - name: Run unit tests
+        run: ./tests/test_runner "[unit]" --colour-mode ansi
+
+      - name: Run integration tests under ${{ matrix.sanitizer }}
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 &
+          sleep 1
+          DISPLAY=:99 ./tests/test_runner "[integration]" --colour-mode ansi

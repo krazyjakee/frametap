@@ -1,10 +1,18 @@
-zig-out
-zig-cache
-bin
-build
-*.out
+# Build artifacts
 *.o
+*.a
+build/
+.sconsign.dblite
+.sconf_temp/
 
+# Binaries
+*.out
+*.lib
+bin/
+examples/capture_example
+tests/test_runner
+tests/test_runner.exe
+test_run_stamp
+
+# Notes
 notes.txt
-./build.sh
-./znotes.txt
