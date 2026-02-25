@@ -112,36 +112,39 @@ example = example_env.Program(
 Depends(example, lib)
 Alias('example', example)
 
-# --- Test binary (optional: `scons test`) ---
-test_env = env.Clone()
-test_env.Prepend(LIBS=['frametap'])
-test_env.Append(LIBPATH=['.'])
+# --- Test binary (optional: `scons test` or `scons tests/test_runner`) ---
+build_tests = any(t in COMMAND_LINE_TARGETS for t in ['test', 'tests/test_runner'])
 
-if platform == 'darwin':
-    test_env.Append(LINKFLAGS=['-lobjc'])
+if build_tests:
+    test_env = env.Clone()
+    test_env.Prepend(LIBS=['frametap'])
+    test_env.Append(LIBPATH=['.'])
 
-# Catch2 via pkg-config
-if platform == 'win32':
-    # On Windows, assume Catch2 is installed via vcpkg
-    vcpkg_root = os.environ.get('VCPKG_ROOT', os.environ.get('VCPKG_INSTALLATION_ROOT', ''))
-    if vcpkg_root:
-        triplet = 'x64-windows'
-        vcpkg_installed = os.path.join(vcpkg_root, 'installed', triplet)
-        test_env.Append(CPPPATH=[os.path.join(vcpkg_installed, 'include')])
-        test_env.Append(LIBPATH=[os.path.join(vcpkg_installed, 'lib')])
-    test_env.Append(LIBS=['Catch2WithMain', 'Catch2'])
-else:
-    test_env.ParseConfig('pkg-config --cflags --libs catch2-with-main')
+    if platform == 'darwin':
+        test_env.Append(LINKFLAGS=['-lobjc'])
 
-test_sources = Glob('tests/test_*.cpp')
-test_runner = test_env.Program('tests/test_runner', test_sources)
-Depends(test_runner, lib)
+    # Catch2 via pkg-config
+    if platform == 'win32':
+        # On Windows, assume Catch2 is installed via vcpkg
+        vcpkg_root = os.environ.get('VCPKG_ROOT', os.environ.get('VCPKG_INSTALLATION_ROOT', ''))
+        if vcpkg_root:
+            triplet = 'x64-windows'
+            vcpkg_installed = os.path.join(vcpkg_root, 'installed', triplet)
+            test_env.Append(CPPPATH=[os.path.join(vcpkg_installed, 'include')])
+            test_env.Append(LIBPATH=[os.path.join(vcpkg_installed, 'lib')])
+        test_env.Append(LIBS=['Catch2WithMain', 'Catch2'])
+    else:
+        test_env.ParseConfig('pkg-config --cflags --libs catch2-with-main')
 
-# `scons test` builds and runs the test suite
-test_run = test_env.Command(
-    'test_run_stamp',
-    test_runner,
-    os.path.join('.', 'tests', 'test_runner') + ' --colour-mode ansi',
-)
-AlwaysBuild(test_run)
-Alias('test', test_run)
+    test_sources = Glob('tests/test_*.cpp')
+    test_runner = test_env.Program('tests/test_runner', test_sources)
+    Depends(test_runner, lib)
+
+    # `scons test` builds and runs the test suite
+    test_run = test_env.Command(
+        'test_run_stamp',
+        test_runner,
+        os.path.join('.', 'tests', 'test_runner') + ' --colour-mode ansi',
+    )
+    AlwaysBuild(test_run)
+    Alias('test', test_run)

@@ -14,7 +14,7 @@ jobs:
         include:
           - os: macos-latest
             name: macOS
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             name: Linux
           - os: windows-latest
             name: Windows
@@ -87,7 +87,7 @@ jobs:
 
   sanitizers:
     name: Linux (${{ matrix.sanitizer }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
