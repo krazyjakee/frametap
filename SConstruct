@@ -41,8 +41,10 @@ if platform == 'darwin':
     env['CXX'] = 'clang++'
     # Objective-C++ for .mm files; target macOS 12.3+ (ScreenCaptureKit minimum)
     env.Append(
-        CXXFLAGS=['-fobjc-arc', '-mmacosx-version-min=12.3'],
-        LINKFLAGS=['-mmacosx-version-min=12.3'],
+        CXXFLAGS=['-fobjc-arc', '-mmacosx-version-min=12.3',
+                  '-arch', 'arm64', '-arch', 'x86_64'],
+        LINKFLAGS=['-mmacosx-version-min=12.3',
+                   '-arch', 'arm64', '-arch', 'x86_64'],
         FRAMEWORKS=[
             'Foundation',
             'AppKit',
