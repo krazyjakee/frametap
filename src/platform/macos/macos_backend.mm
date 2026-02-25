@@ -200,7 +200,6 @@ private:
                                      ok = false;
                                    } else {
                                      content = c;
-                                     [content retain];
                                    }
                                    dispatch_semaphore_signal(ready);
                                  }];
@@ -219,7 +218,6 @@ private:
       }
     }
     if (!target_display) {
-      [content release];
       return false;
     }
 
@@ -234,7 +232,6 @@ private:
         }
       }
       if (!target_window) {
-        [content release];
         return false;
       }
       filter = [[SCContentFilter alloc] initWithDesktopIndependentWindow:target_window];
@@ -262,7 +259,7 @@ private:
                                      type:SCStreamOutputTypeScreen
                        sampleHandlerQueue:nil
                                     error:&err];
-    [content release];
+
     return added;
   }
 

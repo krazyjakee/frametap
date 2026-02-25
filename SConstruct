@@ -39,9 +39,10 @@ sources = ['src/frametap.cpp']
 # --- Platform-specific configuration ---
 if platform == 'darwin':
     env['CXX'] = 'clang++'
-    # Objective-C++ for .mm files
+    # Objective-C++ for .mm files; target macOS 12.3+ (ScreenCaptureKit minimum)
     env.Append(
-        CXXFLAGS=['-fobjc-arc'],
+        CXXFLAGS=['-fobjc-arc', '-mmacosx-version-min=12.3'],
+        LINKFLAGS=['-mmacosx-version-min=12.3'],
         FRAMEWORKS=[
             'Foundation',
             'AppKit',
