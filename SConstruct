@@ -157,7 +157,15 @@ if build_tests:
                 # vcpkg places Catch2WithMain.lib under manual-link/
                 os.path.join(vcpkg_installed, 'lib', 'manual-link'),
             ])
-        test_env.Append(LIBS=['Catch2WithMain', 'Catch2'])
+        # Catch2 v3 via vcpkg names the main-provider lib "Catch2Main";
+        # older builds used "Catch2WithMain".  Probe for the actual name.
+        _main_lib = 'Catch2WithMain'
+        if vcpkg_root:
+            import glob as _glob
+            _manual = os.path.join(vcpkg_installed, 'lib', 'manual-link')
+            if _glob.glob(os.path.join(_manual, 'Catch2Main*')):
+                _main_lib = 'Catch2Main'
+        test_env.Append(LIBS=[_main_lib, 'Catch2'])
     else:
         test_env.ParseConfig('pkg-config --cflags --libs catch2-with-main')
 

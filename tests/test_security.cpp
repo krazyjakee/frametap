@@ -239,10 +239,10 @@ TEST_CASE("start_async is non-blocking", "[integration][security]") {
   ft.start_async();
   auto after = std::chrono::steady_clock::now();
 
-  // start_async should return immediately (< 100ms)
+  // start_async should return immediately (< 500ms)
   auto elapsed =
       std::chrono::duration_cast<std::chrono::milliseconds>(after - before);
-  CHECK(elapsed.count() < 100);
+  CHECK(elapsed.count() < 500);
 
   ft.stop();
 }

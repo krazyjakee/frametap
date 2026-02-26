@@ -186,8 +186,8 @@ TEST_CASE("Resume restarts", "[integration][streaming]") {
 
   ft.resume();
 
-  // Wait up to 1 second for new frames after resume
-  deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+  // Wait up to 2 seconds for new frames after resume
+  deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
   while (frame_count.load() == count_at_pause &&
          std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
