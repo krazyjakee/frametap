@@ -124,7 +124,7 @@ if platform == 'darwin':
     cli_env.Append(LINKFLAGS=['-lobjc'])
 
 cli = cli_env.Program(
-    'cli/frametap_cli',
+    'cli/frametap',
     'cli/frametap_cli.cpp',
 )
 Depends(cli, lib)
@@ -161,6 +161,10 @@ if build_tests:
 
     # Catch2 via pkg-config
     if platform == 'win32':
+        # Catch2Main.lib provides main() inside a static library; the MSVC
+        # linker cannot auto-detect the subsystem from a .lib, so we must
+        # explicitly request a console application.
+        test_env.Append(LINKFLAGS=['/SUBSYSTEM:CONSOLE'])
         # On Windows, assume Catch2 is installed via vcpkg
         vcpkg_root = os.environ.get('VCPKG_ROOT', os.environ.get('VCPKG_INSTALLATION_ROOT', ''))
         if vcpkg_root:

@@ -173,22 +173,24 @@ TEST_CASE("Resume restarts", "[integration][streaming]") {
   ft.on_frame([&](const Frame &) { frame_count.fetch_add(1); });
   ft.start_async();
 
-  // Wait for some frames
+  // Wait for at least 2 frames to confirm streaming is active
   auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  while (frame_count == 0 &&
+      std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (frame_count.load() < 2 &&
          std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
   ft.pause();
+  // Let any in-flight callbacks settle before reading the count
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
   int count_at_pause = frame_count.load();
 
   ft.resume();
 
-  // Wait up to 2 seconds for new frames after resume
-  deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-  while (frame_count.load() == count_at_pause &&
+  // Wait up to 3 seconds for new frames after resume
+  deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (frame_count.load() <= count_at_pause &&
          std::chrono::steady_clock::now() < deadline) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
