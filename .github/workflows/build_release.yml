@@ -71,14 +71,23 @@ jobs:
       - name: Build static library
         run: scons
 
+      - name: Build CLI
+        run: scons cli
+
       # --- Package ---
       - name: Package library
         shell: bash
         run: |
           mkdir -p package/lib
           mkdir -p package/include
+          mkdir -p package/bin
           cp ${{ matrix.lib-name }} package/lib/
           cp -r include/frametap package/include/
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            cp cli/frametap.exe package/bin/
+          else
+            cp cli/frametap package/bin/
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
