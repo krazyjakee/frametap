@@ -152,7 +152,11 @@ if build_tests:
             triplet = 'x64-windows'
             vcpkg_installed = os.path.join(vcpkg_root, 'installed', triplet)
             test_env.Append(CPPPATH=[os.path.join(vcpkg_installed, 'include')])
-            test_env.Append(LIBPATH=[os.path.join(vcpkg_installed, 'lib')])
+            test_env.Append(LIBPATH=[
+                os.path.join(vcpkg_installed, 'lib'),
+                # vcpkg places Catch2WithMain.lib under manual-link/
+                os.path.join(vcpkg_installed, 'lib', 'manual-link'),
+            ])
         test_env.Append(LIBS=['Catch2WithMain', 'Catch2'])
     else:
         test_env.ParseConfig('pkg-config --cflags --libs catch2-with-main')

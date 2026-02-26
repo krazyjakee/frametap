@@ -1,5 +1,6 @@
 #import "macos_backend.h"
 #import "../../util/color.h"
+#import "../../util/safe_alloc.h"
 
 #import <AppKit/AppKit.h>
 #import <CoreGraphics/CoreGraphics.h>
@@ -51,6 +52,17 @@ public:
   // -- Backend interface ----------------------------------------------------
 
   ImageData screenshot(Rect region) override {
+    // H6: Validate requested dimensions before calling platform APIs
+    // (CG will clamp to screen, hiding potential overflow in the caller's intent)
+    auto validate_rect = [](const Rect &r) {
+      if (r.width > 0 && r.height > 0) {
+        checked_rgba_size(static_cast<size_t>(r.width),
+                          static_cast<size_t>(r.height));
+      }
+    };
+    validate_rect(region);
+    validate_rect(region_);
+
     CGRect bounds;
     if (region.width > 0 && region.height > 0) {
       bounds = CGRectMake(region.x, region.y, region.width, region.height);
@@ -150,7 +162,8 @@ public:
       out_h = static_cast<size_t>(region_.height);
     }
 
-    size_t buf_size = out_w * out_h * 4;
+    // H6: Overflow-checked allocation
+    size_t buf_size = checked_rgba_size(out_w, out_h);
     std::vector<uint8_t> rgba(buf_size);
 
     for (size_t row = 0; row < out_h; ++row) {
@@ -278,8 +291,9 @@ private:
   ImageData image_from_cgimage(CGImageRef image) {
     size_t width = CGImageGetWidth(image);
     size_t height = CGImageGetHeight(image);
+    // H6: Overflow-checked allocation
+    size_t buf_size = checked_rgba_size(width, height);
     size_t expected_bpr = width * 4;
-    size_t buf_size = expected_bpr * height;
 
     std::vector<uint8_t> pixels(buf_size);
     CGContextRef ctx = CGBitmapContextCreate(
