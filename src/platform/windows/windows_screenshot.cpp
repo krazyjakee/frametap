@@ -11,6 +11,7 @@
 #include <dxgi1_2.h>
 #include <dwmapi.h>
 
+#include <climits>
 #include <cstring>
 #include <vector>
 
@@ -259,6 +260,19 @@ found:
 // ---------------------------------------------------------------------------
 
 ImageData windows_screenshot_monitor(int monitor_index, Rect region) {
+  // H6: Reject dimensions that would overflow when cast to int or in pixel
+  // buffer allocation. double can represent values far beyond INT_MAX, so
+  // check before any static_cast<int>.
+  if (region.width > 0 && region.height > 0) {
+    constexpr double max_dim = static_cast<double>(INT_MAX);
+    if (region.width > max_dim || region.height > max_dim)
+      throw CaptureError(
+          "Image dimensions too large: overflow in pixel buffer allocation");
+    // Also run the allocation overflow check directly
+    checked_rgba_size(static_cast<size_t>(region.width),
+                      static_cast<size_t>(region.height));
+  }
+
   // Try DXGI first
   ImageData result = dxgi_monitor_screenshot(monitor_index, region);
   if (result.width > 0 && result.height > 0)
@@ -276,6 +290,20 @@ ImageData windows_screenshot_monitor(int monitor_index, Rect region) {
     h = GetSystemMetrics(SM_CYSCREEN);
     x = 0;
     y = 0;
+  } else {
+    // H4: Clamp negative coordinates
+    int screen_w = GetSystemMetrics(SM_CXSCREEN);
+    int screen_h = GetSystemMetrics(SM_CYSCREEN);
+
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > screen_w) w = screen_w - x;
+    if (y + h > screen_h) h = screen_h - y;
+
+    if (w <= 0 || h <= 0) {
+      ReleaseDC(nullptr, screen_dc);
+      return {};
+    }
   }
 
   result = gdi_screenshot(screen_dc, x, y, w, h);
@@ -284,6 +312,16 @@ ImageData windows_screenshot_monitor(int monitor_index, Rect region) {
 }
 
 ImageData windows_screenshot_window(HWND hwnd, Rect region) {
+  // H6: Reject dimensions that overflow int or pixel buffer allocation
+  if (region.width > 0 && region.height > 0) {
+    constexpr double max_dim = static_cast<double>(INT_MAX);
+    if (region.width > max_dim || region.height > max_dim)
+      throw CaptureError(
+          "Image dimensions too large: overflow in pixel buffer allocation");
+    checked_rgba_size(static_cast<size_t>(region.width),
+                      static_cast<size_t>(region.height));
+  }
+
   RECT rect{};
   HRESULT hr = DwmGetWindowAttribute(
       hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rect, sizeof(rect));
