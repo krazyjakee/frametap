@@ -69,10 +69,10 @@ jobs:
 
       # --- Build ---
       - name: Build static library
-        run: scons
+        run: scons ${{ matrix.platform == 'windows' && 'crt=static' || '' }}
 
       - name: Build CLI
-        run: scons cli
+        run: scons cli ${{ matrix.platform == 'windows' && 'crt=static' || '' }}
 
       # --- Package ---
       - name: Package library
