@@ -10,12 +10,21 @@ platform = sys.platform  # 'darwin', 'linux', 'win32'
 #        scons sanitize=undefined
 sanitize = ARGUMENTS.get('sanitize', 'none')
 
+# --- CRT linkage option (Windows only) ---
+# Usage: scons crt=static   -> /MT (static CRT, for consumers like godot-livekit)
+#        scons crt=dynamic   -> /MD (dynamic CRT, default)
+crt = ARGUMENTS.get('crt', 'dynamic')
+if crt not in ('static', 'dynamic'):
+    print(f"Invalid crt={crt}; expected 'static' or 'dynamic'")
+    Exit(1)
+
 # --- Common C++ environment ---
 if platform == 'win32':
     # MSVC on Windows — use /std:c++20 instead of -std=c++20
+    crt_flag = '/MT' if crt == 'static' else '/MD'
     env = Environment(
         CPPPATH=['include', 'src'],
-        CXXFLAGS=['/std:c++20', '/W4', '/O2', '/EHsc', '/GS', '/sdl', '/MD'],
+        CXXFLAGS=['/std:c++20', '/W4', '/O2', '/EHsc', '/GS', '/sdl', crt_flag],
     )
     if sanitize == 'address':
         env.Append(CXXFLAGS=['/fsanitize=address'])
