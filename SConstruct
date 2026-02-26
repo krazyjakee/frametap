@@ -15,7 +15,7 @@ if platform == 'win32':
     # MSVC on Windows — use /std:c++20 instead of -std=c++20
     env = Environment(
         CPPPATH=['include', 'src'],
-        CXXFLAGS=['/std:c++20', '/W4', '/O2', '/EHsc', '/GS', '/sdl'],
+        CXXFLAGS=['/std:c++20', '/W4', '/O2', '/EHsc', '/GS', '/sdl', '/MD'],
     )
     if sanitize == 'address':
         env.Append(CXXFLAGS=['/fsanitize=address'])
