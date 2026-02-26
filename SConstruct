@@ -115,6 +115,21 @@ example = example_env.Program(
 Depends(example, lib)
 Alias('example', example)
 
+# --- CLI binary (optional: `scons cli`) ---
+cli_env = env.Clone()
+cli_env.Prepend(LIBS=['frametap'])
+cli_env.Append(LIBPATH=['.'])
+
+if platform == 'darwin':
+    cli_env.Append(LINKFLAGS=['-lobjc'])
+
+cli = cli_env.Program(
+    'cli/frametap_cli',
+    'cli/frametap_cli.cpp',
+)
+Depends(cli, lib)
+Alias('cli', cli)
+
 # --- Test binary (optional: `scons test` or `scons tests/test_runner`) ---
 # Normalise path separators so `tests\test_runner` on Windows still matches.
 _targets = [t.replace('\\', '/') for t in COMMAND_LINE_TARGETS]

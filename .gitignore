@@ -10,6 +10,7 @@ build/
 *.lib
 bin/
 examples/capture_example
+cli/frametap_cli
 tests/test_runner
 tests/test_runner.exe
 test_run_stamp
