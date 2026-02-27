@@ -107,6 +107,13 @@ jobs:
       - name: Build GUI
         run: scons gui ${{ matrix.platform == 'windows' && 'crt=static' || '' }} ${{ matrix.platform == 'macos' && 'universal_gui=1' || '' }}
 
+      # --- Ad-hoc codesign macOS binaries so Gatekeeper doesn't block them ---
+      - name: Codesign macOS binaries
+        if: matrix.platform == 'macos'
+        run: |
+          codesign --force --sign - cli/frametap
+          codesign --force --sign - gui/frametap_gui
+
       # --- Package library ---
       - name: Package library
         shell: bash
