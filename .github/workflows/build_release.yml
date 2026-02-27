@@ -37,6 +37,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -65,7 +67,21 @@ jobs:
           sudo apt-get install -y \
             libx11-dev libxext-dev libxfixes-dev libxinerama-dev \
             libpipewire-0.3-dev libsystemd-dev libwayland-dev \
+            libglfw3-dev \
             pkg-config
+
+      # --- macOS dependencies ---
+      - name: Install macOS dependencies
+        if: matrix.platform == 'macos'
+        run: brew install glfw
+
+      # --- Windows dependencies ---
+      - name: Install Windows dependencies
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          vcpkg install glfw3:x64-windows
+          echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> $GITHUB_ENV
 
       # --- Build ---
       - name: Build static library
@@ -74,26 +90,58 @@ jobs:
       - name: Build CLI
         run: scons cli ${{ matrix.platform == 'windows' && 'crt=static' || '' }}
 
-      # --- Package ---
+      - name: Build GUI
+        run: scons gui ${{ matrix.platform == 'windows' && 'crt=static' || '' }}
+
+      # --- Package library ---
       - name: Package library
         shell: bash
         run: |
-          mkdir -p package/lib
-          mkdir -p package/include
-          mkdir -p package/bin
-          cp ${{ matrix.lib-name }} package/lib/
-          cp -r include/frametap package/include/
+          mkdir -p pkg-lib/lib
+          mkdir -p pkg-lib/include
+          cp ${{ matrix.lib-name }} pkg-lib/lib/
+          cp -r include/frametap pkg-lib/include/
+
+      # --- Package CLI ---
+      - name: Package CLI
+        shell: bash
+        run: |
+          mkdir -p pkg-cli
           if [ "${{ matrix.platform }}" = "windows" ]; then
-            cp cli/frametap.exe package/bin/
+            cp cli/frametap.exe pkg-cli/
           else
-            cp cli/frametap package/bin/
+            cp cli/frametap pkg-cli/
           fi
 
-      - name: Upload artifact
+      # --- Package GUI ---
+      - name: Package GUI
+        shell: bash
+        run: |
+          mkdir -p pkg-gui
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            cp gui/frametap_gui.exe pkg-gui/
+          else
+            cp gui/frametap_gui pkg-gui/
+          fi
+
+      # --- Upload artifacts ---
+      - name: Upload library artifact
         uses: actions/upload-artifact@v4
         with:
-          name: frametap-${{ matrix.platform }}
-          path: package/
+          name: frametap-lib-${{ matrix.platform }}
+          path: pkg-lib/
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frametap-cli-${{ matrix.platform }}
+          path: pkg-cli/
+
+      - name: Upload GUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frametap-gui-${{ matrix.platform }}
+          path: pkg-gui/
 
   release:
     name: Create GitHub Release
@@ -108,29 +156,25 @@ jobs:
 
       - name: Package releases
         run: |
-          for platform in linux windows macos; do
-            cd artifacts/frametap-$platform
-            zip -r ../../frametap-$platform.zip .
-            cd ../..
+          for component in lib cli gui; do
+            for platform in linux windows macos; do
+              cd artifacts/frametap-$component-$platform
+              zip -r ../../frametap-$component-$platform.zip .
+              cd ../..
+            done
           done
-
-          # Combined release with all platforms
-          mkdir -p combined
-          for platform in linux windows macos; do
-            mkdir -p combined/$platform
-            cp -r artifacts/frametap-$platform/* combined/$platform/
-          done
-          # Headers are the same across platforms — put them at top level
-          cp -r artifacts/frametap-linux/include combined/
-          cd combined
-          zip -r ../frametap-release.zip .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            frametap-linux.zip
-            frametap-windows.zip
-            frametap-macos.zip
-            frametap-release.zip
+            frametap-lib-linux.zip
+            frametap-lib-windows.zip
+            frametap-lib-macos.zip
+            frametap-cli-linux.zip
+            frametap-cli-windows.zip
+            frametap-cli-macos.zip
+            frametap-gui-linux.zip
+            frametap-gui-windows.zip
+            frametap-gui-macos.zip
           name: frametap-${{ github.ref_name }}
