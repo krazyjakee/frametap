@@ -173,7 +173,20 @@ if build_gui:
 
     if platform == 'darwin':
         gui_env.Append(LINKFLAGS=['-lobjc'])
-        if not universal_gui:
+        if universal_gui:
+            # Universal build: use GLFW built from source.  The caller must
+            # set GLFW_PREFIX to the install prefix (contains include/ and
+            # lib/).  We skip pkg-config entirely to avoid PATH issues in CI.
+            glfw_prefix = os.environ.get('GLFW_PREFIX', '')
+            if not glfw_prefix:
+                print('universal_gui=1 requires GLFW_PREFIX env var '
+                      '(path to universal GLFW install prefix)')
+                Exit(1)
+            gui_env.Append(CPPPATH=[os.path.join(glfw_prefix, 'include')])
+            gui_env.Append(LIBPATH=[os.path.join(glfw_prefix, 'lib')])
+            gui_env.Append(LIBS=['glfw3'])
+            gui_env.Append(FRAMEWORKS=['Cocoa', 'IOKit', 'CoreFoundation'])
+        else:
             # Strip multi-arch flags — GLFW from Homebrew is host-arch only
             for flag_list in ('CXXFLAGS', 'LINKFLAGS'):
                 flags = gui_env[flag_list]
@@ -188,7 +201,7 @@ if build_gui:
                         continue
                     cleaned.append(f)
                 gui_env[flag_list] = cleaned
-        gui_env.ParseConfig('pkg-config --cflags --libs glfw3')
+            gui_env.ParseConfig('pkg-config --cflags --libs glfw3')
         gui_env.Append(FRAMEWORKS=['OpenGL'])
     elif platform.startswith('linux'):
         gui_env.ParseConfig('pkg-config --cflags --libs glfw3')

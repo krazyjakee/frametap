@@ -87,8 +87,7 @@ jobs:
             -DGLFW_BUILD_DOCS=OFF
           cmake --build /tmp/glfw-build --config Release
           cmake --install /tmp/glfw-build
-          brew install pkg-config
-          echo "PKG_CONFIG_PATH=/tmp/glfw-universal/lib/pkgconfig" >> $GITHUB_ENV
+          echo "GLFW_PREFIX=/tmp/glfw-universal" >> $GITHUB_ENV
 
       # --- Windows dependencies ---
       - name: Install Windows dependencies
