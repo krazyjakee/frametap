@@ -236,7 +236,7 @@ if build_tests:
         # On Windows, assume Catch2 is installed via vcpkg
         vcpkg_root = os.environ.get('VCPKG_ROOT', os.environ.get('VCPKG_INSTALLATION_ROOT', ''))
         if vcpkg_root:
-            triplet = 'x64-windows-static'
+            triplet = 'x64-windows-static' if crt == 'static' else 'x64-windows'
             vcpkg_installed = os.path.join(vcpkg_root, 'installed', triplet)
             test_env.Append(CPPPATH=[os.path.join(vcpkg_installed, 'include')])
             test_env.Append(LIBPATH=[
