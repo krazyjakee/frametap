@@ -74,11 +74,20 @@ TEST_CASE("Invalid monitor ID", "[integration][errors]") {
   }
 }
 
-// NOTE: "Invalid window ID" test is excluded. On X11, passing a fabricated
-// window ID to XGetWindowAttributes triggers a fatal X error (the default X11
-// error handler calls exit()). The library should install a custom X error
-// handler — tracked as a known improvement. On Wayland, window IDs come from
-// the portal picker and can't be fabricated.
+TEST_CASE("Invalid window ID", "[integration][errors]") {
+  if (!test_helpers::has_display()) {
+    SKIP("No display server available");
+  }
+
+  // On Wayland, window IDs come from the portal picker and can't be
+  // fabricated, so this test is X11-specific.
+  frametap::Window fake;
+  fake.id = 0xDEADBEEF;
+  fake.name = "Nonexistent";
+
+  // The custom X11 error handler prevents exit(); we should get CaptureError.
+  CHECK_THROWS_AS(FrameTap(fake), CaptureError);
+}
 
 TEST_CASE("Rapid start/stop cycles", "[integration][errors]") {
   if (!test_helpers::has_display()) {

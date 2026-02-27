@@ -1,4 +1,5 @@
 #include "x11_backend.h"
+#include "x11_error.h"
 
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
@@ -53,6 +54,8 @@ std::vector<frametap::Monitor> x11_enumerate_monitors() {
 }
 
 std::vector<frametap::Window> x11_enumerate_windows() {
+  x11_err::install();
+
   std::vector<frametap::Window> result;
 
   Display *dpy = XOpenDisplay(nullptr);
@@ -80,7 +83,9 @@ std::vector<frametap::Window> x11_enumerate_windows() {
 
     for (unsigned long i = 0; i < nitems; i++) {
       XWindowAttributes attrs;
-      if (!XGetWindowAttributes(dpy, windows[i], &attrs))
+      x11_err::g_code = 0;
+      if (!XGetWindowAttributes(dpy, windows[i], &attrs) ||
+          x11_err::g_code != 0)
         continue;
       if (attrs.map_state != IsViewable)
         continue;

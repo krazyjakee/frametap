@@ -1,4 +1,5 @@
 #include "x11_backend.h"
+#include "x11_error.h"
 #include "../../../util/color.h"
 #include "../../../util/safe_alloc.h"
 
@@ -9,28 +10,6 @@
 #include <mutex>
 
 namespace frametap::internal {
-
-// ---------------------------------------------------------------------------
-// Custom X11 error handler — prevents exit() on X errors (H5)
-// ---------------------------------------------------------------------------
-
-namespace {
-
-thread_local int g_x11_error_code = 0;
-
-int x11_error_handler(Display * /*display*/, XErrorEvent *event) {
-  g_x11_error_code = event->error_code;
-  return 0; // non-fatal: do not call exit()
-}
-
-std::once_flag g_error_handler_installed;
-
-void install_x11_error_handler() {
-  std::call_once(g_error_handler_installed,
-                 [] { XSetErrorHandler(x11_error_handler); });
-}
-
-} // anonymous namespace
 
 // ---------------------------------------------------------------------------
 // Construction / destruction
@@ -64,7 +43,7 @@ X11Backend::~X11Backend() {
 // ---------------------------------------------------------------------------
 
 void X11Backend::open_display() {
-  install_x11_error_handler();
+  x11_err::install();
 
   display_ = XOpenDisplay(nullptr);
   if (!display_)
@@ -85,8 +64,8 @@ void X11Backend::open_display() {
 void X11Backend::compute_capture_area() {
   if (capture_window_) {
     XWindowAttributes attrs;
-    g_x11_error_code = 0;
-    if (XGetWindowAttributes(display_, target_, &attrs) && g_x11_error_code == 0) {
+    x11_err::g_code = 0;
+    if (XGetWindowAttributes(display_, target_, &attrs) && x11_err::g_code == 0) {
       cap_x_ = 0;
       cap_y_ = 0;
       cap_w_ = attrs.width;
@@ -253,13 +232,13 @@ ImageData X11Backend::capture_frame() {
   result.data.resize(checked_rgba_size(result.width, result.height));
 
   if (use_shm_ && shm_image_) {
-    g_x11_error_code = 0;
+    x11_err::g_code = 0;
     if (!XShmGetImage(display_, target_, shm_image_, cx, cy,
                       AllPlanes)) {
       return {};
     }
     XSync(display_, False);
-    if (g_x11_error_code != 0)
+    if (x11_err::g_code != 0)
       return {};
 
     int bpp = shm_image_->bits_per_pixel / 8;
@@ -282,10 +261,10 @@ ImageData X11Backend::capture_frame() {
     }
   } else {
     // Fallback: XGetImage per frame (slow)
-    g_x11_error_code = 0;
+    x11_err::g_code = 0;
     XImage *img = XGetImage(display_, target_, cx, cy, cw, ch,
                             AllPlanes, ZPixmap);
-    if (!img || g_x11_error_code != 0) {
+    if (!img || x11_err::g_code != 0) {
       if (img)
         XDestroyImage(img);
       return {};

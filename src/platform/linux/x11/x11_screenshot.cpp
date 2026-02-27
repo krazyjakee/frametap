@@ -1,4 +1,5 @@
 #include "x11_backend.h"
+#include "x11_error.h"
 #include "../../../util/color.h"
 #include "../../../util/safe_alloc.h"
 
@@ -10,6 +11,8 @@ namespace frametap::internal {
 
 ImageData x11_take_screenshot(::Window target, Rect region,
                               bool capture_window) {
+  x11_err::install();
+
   Display *dpy = XOpenDisplay(nullptr);
   if (!dpy)
     throw CaptureError(
@@ -25,9 +28,10 @@ ImageData x11_take_screenshot(::Window target, Rect region,
 
   if (capture_window) {
     XWindowAttributes attrs;
-    if (!XGetWindowAttributes(dpy, target, &attrs)) {
+    x11_err::g_code = 0;
+    if (!XGetWindowAttributes(dpy, target, &attrs) || x11_err::g_code != 0) {
       XCloseDisplay(dpy);
-      throw CaptureError("Failed to get window attributes");
+      throw CaptureError("Failed to get window attributes (window may have been closed)");
     }
     cap_x = 0;
     cap_y = 0;
@@ -104,6 +108,7 @@ ImageData x11_take_screenshot(::Window target, Rect region,
           // Mark for removal once all processes detach
           shmctl(shm_info.shmid, IPC_RMID, nullptr);
 
+          x11_err::g_code = 0;
           if (!XShmGetImage(dpy, drawable, img, cap_x, cap_y, AllPlanes)) {
             // SHM capture failed, fall back
             XShmDetach(dpy, &shm_info);
@@ -112,6 +117,16 @@ ImageData x11_take_screenshot(::Window target, Rect region,
             shmdt(shm_info.shmaddr);
             img = nullptr;
             use_shm = false;
+          } else {
+            XSync(dpy, False);
+            if (x11_err::g_code != 0) {
+              XShmDetach(dpy, &shm_info);
+              img->data = nullptr;
+              XDestroyImage(img);
+              shmdt(shm_info.shmaddr);
+              img = nullptr;
+              use_shm = false;
+            }
           }
         }
       }
@@ -122,8 +137,16 @@ ImageData x11_take_screenshot(::Window target, Rect region,
 
   // Fallback to XGetImage
   if (!img) {
+    x11_err::g_code = 0;
     img = XGetImage(dpy, drawable, cap_x, cap_y, cap_w, cap_h, AllPlanes,
                     ZPixmap);
+    if (img) {
+      XSync(dpy, False);
+      if (x11_err::g_code != 0) {
+        XDestroyImage(img);
+        img = nullptr;
+      }
+    }
   }
 
   if (!img) {
