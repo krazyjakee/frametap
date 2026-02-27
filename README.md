@@ -18,16 +18,44 @@ Each download includes:
 
 Run the `frametap` command from a terminal:
 
-```
-./bin/frametap
+```bash
+# List available monitors
+./bin/frametap --list-monitors
+
+# Capture a monitor by ID
+./bin/frametap --monitor 1
+
+# Capture a window by ID
+./bin/frametap --window 12345
+
+# Capture a region (x,y,width,height)
+./bin/frametap --region 0,0,1920,1080
+
+# Save to a custom file
+./bin/frametap --monitor 1 -o desktop.bmp
+
+# Interactive mode (menu-driven)
+./bin/frametap --interactive
 ```
 
-It will:
-1. Check that your system has the right permissions for screen capture
-2. Ask you what to capture — a monitor, a window, or a custom region
-3. Save the result as `screenshot.bmp` in the current folder
+Run `./bin/frametap --help` to see all options.
 
-That's it.
+#### CLI Reference
+
+```
+Capture modes (mutually exclusive):
+  --monitor <id>                   Capture a monitor by ID
+  --window <id>                    Capture a window by ID
+  --region <x>,<y>,<w>,<h>        Capture a screen region
+  --interactive                    Interactive mode (menu-driven)
+
+Options:
+  -o, --output <file>              Output file (default: screenshot.bmp)
+  --list-monitors                  List available monitors and exit
+  --list-windows                   List available windows and exit
+  --check-permissions              Check capture permissions and exit
+  -h, --help                       Show this help
+```
 
 ### Platform Permissions
 

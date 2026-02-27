@@ -228,6 +228,7 @@ if build_tests:
     test_env = env.Clone()
     test_env.Prepend(LIBS=['frametap'])
     test_env.Append(LIBPATH=['.'])
+    test_env.Append(CPPPATH=['cli'])
 
     if platform == 'darwin':
         test_env.Append(LINKFLAGS=['-lobjc'])
