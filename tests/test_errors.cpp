@@ -79,6 +79,7 @@ TEST_CASE("Invalid window ID", "[integration][errors]") {
     SKIP("No display server available");
   }
 
+#ifdef __linux__
   // On Wayland, window IDs come from the portal picker and can't be
   // fabricated, so this test is X11-specific.
   frametap::Window fake;
@@ -87,6 +88,9 @@ TEST_CASE("Invalid window ID", "[integration][errors]") {
 
   // The custom X11 error handler prevents exit(); we should get CaptureError.
   CHECK_THROWS_AS(FrameTap(fake), CaptureError);
+#else
+  SKIP("Invalid window ID throw test only applicable on Linux/X11");
+#endif
 }
 
 TEST_CASE("Rapid start/stop cycles", "[integration][errors]") {
