@@ -1,47 +1,78 @@
 # Frametap
 
-A lightweight C++20 screen capture library for macOS, Linux, and Windows.
+Cross-platform screen capture for **macOS**, **Linux**, and **Windows**.
 
-Frametap provides:
-- Single-frame screenshots (RGBA)
-- Live streaming frame capture with callbacks
-- Monitor and window enumeration
-- Region, monitor, and window capture
-- Pause/resume streaming
-- Platform permission diagnostics
+Frametap lets you take screenshots of your entire screen, a specific monitor, a window, or a custom region. It works as a standalone command-line tool or as a C++ library you can embed in your own apps.
+
+## Quick Start
+
+### Download
+
+Grab the latest release for your platform from the [Releases page](https://github.com/krazyjakee/frametap/releases).
+
+Each download includes:
+- `bin/frametap` (or `frametap.exe` on Windows) — the command-line tool
+- `lib/` and `include/` — the C++ library for developers
+
+### Take a Screenshot
+
+Run the `frametap` command from a terminal:
+
+```
+./bin/frametap
+```
+
+It will:
+1. Check that your system has the right permissions for screen capture
+2. Ask you what to capture — a monitor, a window, or a custom region
+3. Save the result as `screenshot.bmp` in the current folder
+
+That's it.
+
+### Platform Permissions
+
+**macOS** — The first time you run Frametap, macOS will ask you to grant Screen Recording permission. Go to **System Settings > Privacy & Security > Screen Recording** and enable it for your terminal app.
+
+**Linux (Wayland)** — A system dialog will pop up asking you to pick which screen or window to share. This is normal — Wayland requires it for security.
+
+**Linux (X11)** — No extra setup needed.
+
+**Windows** — No extra setup needed. If you're on Remote Desktop, Frametap will automatically use a compatible capture method.
 
 ## Platform Support
 
-| Platform | Backend | Notes |
-|---|---|---|
-| macOS 12.3+ | ScreenCaptureKit | Preferred path |
-| macOS 10.15+ | CoreGraphics | Fallback for screenshots |
-| Linux (Wayland) | xdg-desktop-portal + PipeWire | GNOME, KDE, Sway, Hyprland |
-| Linux (X11) | X11 + XShm | Any X11 session |
-| Windows 10+ | DXGI Desktop Duplication | Preferred path |
-| Windows 8+ | GDI | Fallback (RDP, older GPUs) |
+| Platform | Status |
+|---|---|
+| macOS 12.3+ | Fully supported |
+| macOS 10.15+ | Screenshots only (older fallback) |
+| Linux (Wayland) | Fully supported — GNOME, KDE, Sway, Hyprland |
+| Linux (X11) | Fully supported |
+| Windows 10+ | Fully supported |
+| Windows 8+ | Screenshots only (GDI fallback) |
 
-Linux automatically detects whether to use Wayland or X11 at runtime.
+Linux automatically detects Wayland vs X11 at runtime.
 
-## Building
+---
 
-Requires C++20 and [SCons](https://scons.org/).
+## Building from Source
+
+If you'd rather build Frametap yourself instead of downloading a release, you'll need C++20 and [SCons](https://scons.org/).
 
 ```bash
-# Build the static library
+# Build the library
 scons
 
-# Build the example
-scons example
+# Build the CLI tool
+scons cli
 ```
 
-This produces `libframetap.a` (or `frametap.lib` on Windows) and optionally `examples/capture_example`.
+This produces `libframetap.a` (or `frametap.lib` on Windows) and `cli/frametap`.
 
-### Platform Dependencies
+### Dependencies
 
-**macOS** — No extra dependencies. Xcode command line tools provide everything.
+**macOS** — Just Xcode command-line tools (`xcode-select --install`).
 
-**Linux** — Install development libraries:
+**Linux** — Install the development libraries for your distro:
 
 ```bash
 # Debian / Ubuntu
@@ -63,7 +94,7 @@ sudo pacman -S \
   pkg-config
 ```
 
-For Wayland screen capture, you also need a portal backend for your compositor:
+For Wayland, you also need a portal backend for your compositor:
 
 ```bash
 # GNOME
@@ -76,9 +107,15 @@ sudo apt install xdg-desktop-portal-wlr
 # install xdg-desktop-portal-hyprland from your distro or AUR
 ```
 
-**Windows** — MSVC with C++20 support. No extra libraries needed (DXGI, D3D11, GDI are part of the Windows SDK).
+**Windows** — MSVC with C++20 support. No extra libraries needed.
 
-## Usage
+---
+
+## Using the C++ Library
+
+Frametap also works as a static C++ library for embedding screen capture in your own applications.
+
+### Quick Example
 
 ```cpp
 #include <frametap/frametap.h>
@@ -93,7 +130,7 @@ if (perms.status == frametap::PermissionStatus::error) {
 // Take a screenshot
 frametap::FrameTap tap;
 auto image = tap.screenshot();
-// image.data = std::vector<uint8_t> in RGBA format
+// image.data = RGBA pixel buffer
 // image.width, image.height = dimensions
 
 // Stream frames
@@ -112,21 +149,21 @@ auto monitors = frametap::get_monitors();
 auto windows  = frametap::get_windows();
 ```
 
-## Integration
+### Integration
 
-Frametap builds as a static library. To integrate into your project:
+Link the static library into your project:
 
 ```python
 # In your SConstruct
 env.Append(CPPPATH=['path/to/frametap/include'])
-env.Append(LIBPATH=['path/to/frametap'])
+env.Append(LIBPATH=['path/to/frametap/lib'])
 env.Append(LIBS=['frametap'])
 # + platform frameworks/libraries as needed
 ```
 
-## API
+### API Reference
 
-### Free Functions
+#### Free Functions
 
 | Function | Description |
 |---|---|
@@ -134,7 +171,7 @@ env.Append(LIBS=['frametap'])
 | `get_windows()` | List visible windows (empty on Wayland — use portal picker) |
 | `check_permissions()` | Diagnose platform permission/dependency issues |
 
-### `frametap::FrameTap`
+#### `frametap::FrameTap`
 
 | Method | Description |
 |---|---|
@@ -153,7 +190,7 @@ env.Append(LIBS=['frametap'])
 | `screenshot()` | Grab a single frame |
 | `screenshot(Rect)` | Grab a single frame of a region |
 
-### Types
+#### Types
 
 | Type | Fields |
 |---|---|
@@ -165,18 +202,10 @@ env.Append(LIBS=['frametap'])
 | `PermissionCheck` | `PermissionStatus status; std::string summary; std::vector<std::string> details` |
 | `ThreadSafeQueue<T>` | Thread-safe queue for passing frames between threads |
 
-### Exceptions
+#### Exceptions
 
 All errors throw `frametap::CaptureError` (inherits `std::runtime_error`) with platform-specific messages and actionable advice.
 
-## Platform Notes
-
-**Wayland**: Screen capture requires user interaction on first use — the portal shows a picker dialog where the user selects the monitor or window to share. Window enumeration (`get_windows()`) returns an empty list because Wayland restricts window access; the user selects windows interactively through the portal.
-
-**macOS**: Screen recording permission must be granted in System Settings > Privacy & Security > Screen Recording. Use `check_permissions()` to detect this before attempting capture.
-
-**Windows**: DXGI Desktop Duplication may be unavailable in Remote Desktop sessions or on older GPUs. Frametap automatically falls back to GDI in these cases.
-
 ## License
 
-See [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

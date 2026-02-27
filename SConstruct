@@ -139,6 +139,65 @@ cli = cli_env.Program(
 Depends(cli, lib)
 Alias('cli', cli)
 
+# --- GUI binary (optional: `scons gui`) ---
+_targets = [t.replace('\\', '/') for t in COMMAND_LINE_TARGETS]
+build_gui = 'gui' in _targets
+
+if build_gui:
+    gui_env = env.Clone()
+    gui_env.Prepend(LIBS=['frametap'])
+    gui_env.Append(LIBPATH=['.'])
+    gui_env.Append(CPPPATH=[
+        'vendor/imgui',
+        'vendor/imgui/backends',
+        'vendor/lodepng',
+    ])
+
+    imgui_sources = [
+        'vendor/imgui/imgui.cpp',
+        'vendor/imgui/imgui_draw.cpp',
+        'vendor/imgui/imgui_tables.cpp',
+        'vendor/imgui/imgui_widgets.cpp',
+        'vendor/imgui/imgui_demo.cpp',
+        'vendor/imgui/backends/imgui_impl_glfw.cpp',
+        'vendor/imgui/backends/imgui_impl_opengl3.cpp',
+    ]
+    gui_sources = ['gui/frametap_gui.cpp', 'vendor/lodepng/lodepng.cpp'] + imgui_sources
+
+    if platform == 'darwin':
+        gui_env.Append(LINKFLAGS=['-lobjc'])
+        # Strip multi-arch flags — GLFW from Homebrew is host-arch only
+        for flag_list in ('CXXFLAGS', 'LINKFLAGS'):
+            flags = gui_env[flag_list]
+            cleaned = []
+            skip_next = False
+            for f in flags:
+                if skip_next:
+                    skip_next = False
+                    continue
+                if f == '-arch':
+                    skip_next = True
+                    continue
+                cleaned.append(f)
+            gui_env[flag_list] = cleaned
+        gui_env.ParseConfig('pkg-config --cflags --libs glfw3')
+        gui_env.Append(FRAMEWORKS=['OpenGL'])
+    elif platform.startswith('linux'):
+        gui_env.ParseConfig('pkg-config --cflags --libs glfw3')
+        gui_env.Append(LIBS=['GL'])
+    elif platform == 'win32':
+        vcpkg_root = os.environ.get('VCPKG_ROOT', os.environ.get('VCPKG_INSTALLATION_ROOT', ''))
+        if vcpkg_root:
+            triplet = 'x64-windows'
+            vcpkg_installed = os.path.join(vcpkg_root, 'installed', triplet)
+            gui_env.Append(CPPPATH=[os.path.join(vcpkg_installed, 'include')])
+            gui_env.Append(LIBPATH=[os.path.join(vcpkg_installed, 'lib')])
+        gui_env.Append(LIBS=['glfw3', 'opengl32'])
+
+    gui = gui_env.Program('gui/frametap_gui', gui_sources)
+    Depends(gui, lib)
+    Alias('gui', gui)
+
 # --- Test binary (optional: `scons test` or `scons tests/test_runner`) ---
 # Normalise path separators so `tests\test_runner` on Windows still matches.
 _targets = [t.replace('\\', '/') for t in COMMAND_LINE_TARGETS]
