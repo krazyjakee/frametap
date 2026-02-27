@@ -80,7 +80,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: bash
         run: |
-          vcpkg install glfw3:x64-windows
+          vcpkg install glfw3:x64-windows-static
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> $GITHUB_ENV
 
       # --- Build ---
