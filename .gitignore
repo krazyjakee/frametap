@@ -17,9 +17,6 @@ test_run_stamp
 gui/frametap_gui
 gui/frametap_gui.exe
 
-# Downloaded vendor dependencies
-vendor/lodepng/
-
 # ImGui runtime config
 imgui.ini
 

@@ -29,8 +29,6 @@ struct AppState {
 
   std::unique_ptr<frametap::FrameTap> tap;
   frametap::ThreadSafeQueue<frametap::Frame> frame_queue;
-  bool streaming = false;
-
   GLuint texture = 0;
   size_t tex_w = 0, tex_h = 0;
 
@@ -65,7 +63,6 @@ static void stop_capture(AppState &s) {
   // Drain any remaining frames
   while (s.frame_queue.try_pop().has_value()) {
   }
-  s.streaming = false;
 }
 
 static void start_capture_monitor(AppState &s, int index) {
@@ -77,7 +74,7 @@ static void start_capture_monitor(AppState &s, int index) {
     s.tap->on_frame(
         [&s](const frametap::Frame &frame) { s.frame_queue.push(frame); });
     s.tap->start_async();
-    s.streaming = true;
+
     s.status = "Capturing: " + s.monitors[index].name;
   } catch (const std::exception &e) {
     s.status = std::string("Capture failed: ") + e.what();
@@ -94,7 +91,7 @@ static void start_capture_window(AppState &s, int index) {
     s.tap->on_frame(
         [&s](const frametap::Frame &frame) { s.frame_queue.push(frame); });
     s.tap->start_async();
-    s.streaming = true;
+
     s.status = "Capturing: " + s.windows[index].name;
   } catch (const std::exception &e) {
     s.status = std::string("Capture failed: ") + e.what();
@@ -224,11 +221,6 @@ static void draw_preview(AppState &s) {
   // Bottom row: save button + status
   if (ImGui::Button("Save PNG")) {
     save_png(s);
-  }
-  ImGui::SameLine();
-  if (s.streaming && ImGui::Button("Stop")) {
-    stop_capture(s);
-    s.status = "Stopped";
   }
   ImGui::SameLine();
   ImGui::TextWrapped("%s", s.status.c_str());
