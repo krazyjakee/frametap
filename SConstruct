@@ -10,6 +10,13 @@ platform = sys.platform  # 'darwin', 'linux', 'win32'
 #        scons sanitize=undefined
 sanitize = ARGUMENTS.get('sanitize', 'none')
 
+# --- Universal GUI option (macOS only) ---
+# Usage: scons gui universal_gui=1
+# When set, the GUI keeps multi-arch flags (-arch arm64 -arch x86_64).
+# Requires a universal GLFW (e.g. built from source); Homebrew GLFW is
+# single-arch so this is off by default.
+universal_gui = ARGUMENTS.get('universal_gui', '0') == '1'
+
 # --- CRT linkage option (Windows only) ---
 # Usage: scons crt=static   -> /MT (static CRT, for consumers like godot-livekit)
 #        scons crt=dynamic   -> /MD (dynamic CRT, default)
@@ -166,20 +173,21 @@ if build_gui:
 
     if platform == 'darwin':
         gui_env.Append(LINKFLAGS=['-lobjc'])
-        # Strip multi-arch flags — GLFW from Homebrew is host-arch only
-        for flag_list in ('CXXFLAGS', 'LINKFLAGS'):
-            flags = gui_env[flag_list]
-            cleaned = []
-            skip_next = False
-            for f in flags:
-                if skip_next:
-                    skip_next = False
-                    continue
-                if f == '-arch':
-                    skip_next = True
-                    continue
-                cleaned.append(f)
-            gui_env[flag_list] = cleaned
+        if not universal_gui:
+            # Strip multi-arch flags — GLFW from Homebrew is host-arch only
+            for flag_list in ('CXXFLAGS', 'LINKFLAGS'):
+                flags = gui_env[flag_list]
+                cleaned = []
+                skip_next = False
+                for f in flags:
+                    if skip_next:
+                        skip_next = False
+                        continue
+                    if f == '-arch':
+                        skip_next = True
+                        continue
+                    cleaned.append(f)
+                gui_env[flag_list] = cleaned
         gui_env.ParseConfig('pkg-config --cflags --libs glfw3')
         gui_env.Append(FRAMEWORKS=['OpenGL'])
     elif platform.startswith('linux'):

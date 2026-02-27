@@ -22,3 +22,5 @@ imgui.ini
 
 # Notes
 notes.txt
+.DS_Store
+cli/frametap_cli

@@ -71,9 +71,23 @@ jobs:
             pkg-config
 
       # --- macOS dependencies ---
+      # Build GLFW from source as a universal (arm64 + x86_64) binary so that
+      # the CLI and GUI release artifacts work on both Intel and Apple Silicon.
       - name: Install macOS dependencies
         if: matrix.platform == 'macos'
-        run: brew install glfw
+        run: |
+          git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw.git /tmp/glfw
+          cmake -S /tmp/glfw -B /tmp/glfw-build \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.3 \
+            -DCMAKE_INSTALL_PREFIX=/tmp/glfw-universal \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DGLFW_BUILD_EXAMPLES=OFF \
+            -DGLFW_BUILD_TESTS=OFF \
+            -DGLFW_BUILD_DOCS=OFF
+          cmake --build /tmp/glfw-build --config Release
+          cmake --install /tmp/glfw-build
+          echo "PKG_CONFIG_PATH=/tmp/glfw-universal/lib/pkgconfig" >> $GITHUB_ENV
 
       # --- Windows dependencies ---
       - name: Install Windows dependencies
@@ -91,7 +105,7 @@ jobs:
         run: scons cli ${{ matrix.platform == 'windows' && 'crt=static' || '' }}
 
       - name: Build GUI
-        run: scons gui ${{ matrix.platform == 'windows' && 'crt=static' || '' }}
+        run: scons gui ${{ matrix.platform == 'windows' && 'crt=static' || '' }} ${{ matrix.platform == 'macos' && 'universal_gui=1' || '' }}
 
       # --- Package library ---
       - name: Package library
