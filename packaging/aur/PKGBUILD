@@ -1,6 +1,6 @@
 # Maintainer: Jacob Cattrall <https://github.com/krazyjakee>
 pkgname=frametap-bin
-pkgver=1.0.0
+pkgver=0.1.2
 pkgrel=1
 pkgdesc="Cross-platform screen capture CLI for macOS, Linux, and Windows"
 arch=('x86_64')
@@ -10,7 +10,7 @@ depends=('libx11' 'libxext' 'libxfixes' 'libxinerama' 'pipewire' 'systemd-libs' 
 provides=('frametap')
 conflicts=('frametap')
 source=("https://github.com/krazyjakee/frametap/releases/download/v${pkgver}/frametap-cli-linux.zip")
-sha256sums=('__SHA256_LINUX__')
+sha256sums=('3337570b2e4ac6e81c1d4ed963f30995125cd446eabc1662a07b7e9a9342205a')
 
 package() {
     install -Dm755 frametap "${pkgdir}/usr/bin/frametap"
