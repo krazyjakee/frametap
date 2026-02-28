@@ -1,5 +1,6 @@
 #include "cli_args.h"
 #include <frametap/frametap.h>
+#include <frametap/version.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -90,6 +91,8 @@ static double read_double(const char *prompt) {
 
 static void print_usage(const char *prog) {
   std::printf(
+      "frametap %s\n"
+      "\n"
       "Usage: %s [options]\n"
       "\n"
       "Capture modes (mutually exclusive):\n"
@@ -103,8 +106,9 @@ static void print_usage(const char *prog) {
       "  --list-monitors                  List available monitors and exit\n"
       "  --list-windows                   List available windows and exit\n"
       "  --check-permissions              Check capture permissions and exit\n"
+      "  -v, --version                    Show version and exit\n"
       "  -h, --help                       Show this help\n",
-      prog);
+      FRAMETAP_VERSION, prog);
 }
 
 // --- Interactive mode (original behavior) ---
@@ -214,6 +218,11 @@ int main(int argc, char *argv[]) {
 
   if (args.action == cli::Action::help) {
     print_usage(argv[0]);
+    return 0;
+  }
+
+  if (args.action == cli::Action::version) {
+    std::printf("frametap %s\n", FRAMETAP_VERSION);
     return 0;
   }
 

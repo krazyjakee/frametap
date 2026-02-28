@@ -9,6 +9,7 @@ namespace cli {
 enum class Action {
   none,
   help,
+  version,
   list_monitors,
   list_windows,
   check_permissions,
@@ -60,6 +61,11 @@ inline Args parse_args(int argc, char *argv[]) {
 
     if (arg == "-h" || arg == "--help") {
       args.action = Action::help;
+      return args;
+    }
+
+    if (arg == "-v" || arg == "--version") {
+      args.action = Action::version;
       return args;
     }
 

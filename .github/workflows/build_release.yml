@@ -134,6 +134,21 @@ jobs:
             cp cli/frametap pkg-cli/
           fi
 
+      # --- Build .deb package (Linux only) ---
+      - name: Build .deb package
+        if: matrix.platform == 'linux'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION:-1.0.0}"
+          bash packaging/debian/build-deb.sh cli/frametap "$VERSION"
+
+      - name: Upload .deb artifact
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frametap-deb
+          path: frametap_*.deb
+
       # --- Package GUI ---
       - name: Package GUI
         shell: bash
@@ -184,6 +199,12 @@ jobs:
               cd ../..
             done
           done
+          cp artifacts/frametap-deb/*.deb .
+
+      - name: Generate checksums
+        run: |
+          sha256sum frametap-*.zip frametap_*.deb > checksums-sha256.txt
+          cat checksums-sha256.txt
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -198,4 +219,146 @@ jobs:
             frametap-gui-linux.zip
             frametap-gui-windows.zip
             frametap-gui-macos.zip
+            frametap_*.deb
+            checksums-sha256.txt
           name: frametap-${{ github.ref_name }}
+
+  update-apt-repo:
+    name: Publish to APT repository
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frametap-deb
+          path: debs
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format long 2>/dev/null | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
+          echo "GPG_KEY_ID=$GPG_KEY_ID" >> $GITHUB_ENV
+
+      - name: Update APT repository
+        run: |
+          sudo apt-get update && sudo apt-get install -y dpkg-dev
+
+          mkdir -p site/apt/pool site/apt/dists/stable/main/binary-amd64
+          cp debs/*.deb site/apt/pool/
+
+          cd site/apt
+
+          # Generate Packages index
+          dpkg-scanpackages --multiversion pool > dists/stable/main/binary-amd64/Packages
+          gzip -k -f dists/stable/main/binary-amd64/Packages
+
+          # Generate Release file
+          cd dists/stable
+          cat > Release <<RELEASE
+          Origin: frametap
+          Label: frametap
+          Suite: stable
+          Codename: stable
+          Architectures: amd64
+          Components: main
+          Description: Frametap APT repository
+          RELEASE
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' Release
+
+          apt-ftparchive release . >> Release
+
+          # Sign the Release file
+          gpg --batch --yes --default-key "$GPG_KEY_ID" -abs -o Release.gpg Release
+          gpg --batch --yes --default-key "$GPG_KEY_ID" --clearsign -o InRelease Release
+
+          cd ../../..
+
+          # Export public key for users
+          gpg --armor --export "$GPG_KEY_ID" > site/apt/frametap.gpg.key
+
+      - name: Push to gh-pages
+        run: |
+          cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Update APT repo for ${{ github.ref_name }}"
+          git push
+
+  update-packaging:
+    name: Update package manager manifests
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Download release artifacts for checksums
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          for platform in linux macos windows; do
+            curl -sL -o "frametap-cli-$platform.zip" \
+              "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/frametap-cli-$platform.zip"
+          done
+          SHA_LINUX=$(sha256sum frametap-cli-linux.zip | cut -d' ' -f1)
+          SHA_MACOS=$(sha256sum frametap-cli-macos.zip | cut -d' ' -f1)
+          SHA_WINDOWS=$(sha256sum frametap-cli-windows.zip | cut -d' ' -f1)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SHA_LINUX=$SHA_LINUX" >> $GITHUB_ENV
+          echo "SHA_MACOS=$SHA_MACOS" >> $GITHUB_ENV
+          echo "SHA_WINDOWS=$SHA_WINDOWS" >> $GITHUB_ENV
+
+      - name: Update Homebrew formula
+        run: |
+          sed -i "s/version \".*\"/version \"$VERSION\"/" packaging/homebrew/frametap.rb
+          sed -i "s|__SHA256_MACOS__|$SHA_MACOS|" packaging/homebrew/frametap.rb
+          sed -i "s|__SHA256_LINUX__|$SHA_LINUX|" packaging/homebrew/frametap.rb
+
+      - name: Update Scoop manifest
+        run: |
+          python3 -c "
+          import json, sys
+          with open('packaging/scoop/frametap.json') as f:
+              m = json.load(f)
+          m['version'] = '$VERSION'
+          m['architecture']['64bit']['url'] = f'https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/frametap-cli-windows.zip'
+          m['architecture']['64bit']['hash'] = '$SHA_WINDOWS'
+          with open('packaging/scoop/frametap.json', 'w') as f:
+              json.dump(m, f, indent=2)
+              f.write('\n')
+          "
+
+      - name: Update AUR PKGBUILD
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/PKGBUILD
+          sed -i "s|__SHA256_LINUX__|$SHA_LINUX|" packaging/aur/PKGBUILD
+          sed -i "s|sha256sums=('.*')|sha256sums=('$SHA_LINUX')|" packaging/aur/PKGBUILD
+
+      - name: Update winget manifest
+        run: |
+          sed -i "s/^PackageVersion:.*/PackageVersion: $VERSION/" packaging/winget/krazyjakee.frametap.yaml
+          sed -i "s|__SHA256_WINDOWS__|$SHA_WINDOWS|" packaging/winget/krazyjakee.frametap.yaml
+          sed -i "s|InstallerSha256:.*|InstallerSha256: $SHA_WINDOWS|" packaging/winget/krazyjakee.frametap.yaml
+          sed -i "s|/download/v[^/]*/|/download/${{ github.ref_name }}/|" packaging/winget/krazyjakee.frametap.yaml
+
+      - name: Commit updated manifests
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packaging/
+          git diff --cached --quiet || git commit -m "Update package manifests for ${{ github.ref_name }}"
+          git push

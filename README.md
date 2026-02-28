@@ -4,15 +4,56 @@ Cross-platform screen capture for **macOS**, **Linux**, and **Windows**.
 
 Frametap lets you take screenshots of your entire screen, a specific monitor, a window, or a custom region. It works as a standalone command-line tool or as a C++ library you can embed in your own apps.
 
-## Quick Start
+## Install
 
-### Download
+### macOS (Homebrew)
+
+```bash
+brew tap krazyjakee/tap
+brew install frametap
+```
+
+### Ubuntu / Debian (apt)
+
+```bash
+curl -fsSL https://krazyjakee.github.io/frametap/apt/frametap.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/frametap.gpg
+echo "deb [signed-by=/usr/share/keyrings/frametap.gpg] https://krazyjakee.github.io/frametap/apt stable main" | sudo tee /etc/apt/sources.list.d/frametap.list
+sudo apt update
+sudo apt install frametap
+```
+
+Or download the `.deb` directly from the [Releases page](https://github.com/krazyjakee/frametap/releases) and install with `sudo apt install ./frametap_*.deb`.
+
+### Linux (quick install)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/krazyjakee/frametap/main/install.sh | sh
+```
+
+### Arch Linux (AUR)
+
+```bash
+yay -S frametap-bin
+```
+
+### Windows (Scoop)
+
+```powershell
+scoop bucket add frametap https://github.com/krazyjakee/scoop-frametap
+scoop install frametap
+```
+
+### Windows (winget)
+
+```powershell
+winget install krazyjakee.frametap
+```
+
+### Download binaries
 
 Grab the latest release for your platform from the [Releases page](https://github.com/krazyjakee/frametap/releases).
 
-Each download includes:
-- `bin/frametap` (or `frametap.exe` on Windows) — the command-line tool
-- `lib/` and `include/` — the C++ library for developers
+## Quick Start
 
 ### Take a Screenshot
 
@@ -20,25 +61,25 @@ Run the `frametap` command from a terminal:
 
 ```bash
 # List available monitors
-./bin/frametap --list-monitors
+frametap --list-monitors
 
 # Capture a monitor by ID
-./bin/frametap --monitor 1
+frametap --monitor 1
 
 # Capture a window by ID
-./bin/frametap --window 12345
+frametap --window 12345
 
 # Capture a region (x,y,width,height)
-./bin/frametap --region 0,0,1920,1080
+frametap --region 0,0,1920,1080
 
 # Save to a custom file
-./bin/frametap --monitor 1 -o desktop.bmp
+frametap --monitor 1 -o desktop.bmp
 
 # Interactive mode (menu-driven)
-./bin/frametap --interactive
+frametap --interactive
 ```
 
-Run `./bin/frametap --help` to see all options.
+Run `frametap --help` to see all options.
 
 #### CLI Reference
 
@@ -54,6 +95,7 @@ Options:
   --list-monitors                  List available monitors and exit
   --list-windows                   List available windows and exit
   --check-permissions              Check capture permissions and exit
+  -v, --version                    Show version and exit
   -h, --help                       Show this help
 ```
 
