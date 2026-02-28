@@ -185,6 +185,11 @@ jobs:
             done
           done
 
+      - name: Generate checksums
+        run: |
+          sha256sum frametap-*.zip > checksums-sha256.txt
+          cat checksums-sha256.txt
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -198,4 +203,72 @@ jobs:
             frametap-gui-linux.zip
             frametap-gui-windows.zip
             frametap-gui-macos.zip
+            checksums-sha256.txt
           name: frametap-${{ github.ref_name }}
+
+  update-packaging:
+    name: Update package manager manifests
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Download release artifacts for checksums
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          for platform in linux macos windows; do
+            curl -sL -o "frametap-cli-$platform.zip" \
+              "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/frametap-cli-$platform.zip"
+          done
+          SHA_LINUX=$(sha256sum frametap-cli-linux.zip | cut -d' ' -f1)
+          SHA_MACOS=$(sha256sum frametap-cli-macos.zip | cut -d' ' -f1)
+          SHA_WINDOWS=$(sha256sum frametap-cli-windows.zip | cut -d' ' -f1)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "SHA_LINUX=$SHA_LINUX" >> $GITHUB_ENV
+          echo "SHA_MACOS=$SHA_MACOS" >> $GITHUB_ENV
+          echo "SHA_WINDOWS=$SHA_WINDOWS" >> $GITHUB_ENV
+
+      - name: Update Homebrew formula
+        run: |
+          sed -i "s/version \".*\"/version \"$VERSION\"/" packaging/homebrew/frametap.rb
+          sed -i "s|__SHA256_MACOS__|$SHA_MACOS|" packaging/homebrew/frametap.rb
+          sed -i "s|__SHA256_LINUX__|$SHA_LINUX|" packaging/homebrew/frametap.rb
+
+      - name: Update Scoop manifest
+        run: |
+          python3 -c "
+          import json, sys
+          with open('packaging/scoop/frametap.json') as f:
+              m = json.load(f)
+          m['version'] = '$VERSION'
+          m['architecture']['64bit']['url'] = f'https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/frametap-cli-windows.zip'
+          m['architecture']['64bit']['hash'] = '$SHA_WINDOWS'
+          with open('packaging/scoop/frametap.json', 'w') as f:
+              json.dump(m, f, indent=2)
+              f.write('\n')
+          "
+
+      - name: Update AUR PKGBUILD
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/PKGBUILD
+          sed -i "s|__SHA256_LINUX__|$SHA_LINUX|" packaging/aur/PKGBUILD
+          sed -i "s|sha256sums=('.*')|sha256sums=('$SHA_LINUX')|" packaging/aur/PKGBUILD
+
+      - name: Update winget manifest
+        run: |
+          sed -i "s/^PackageVersion:.*/PackageVersion: $VERSION/" packaging/winget/krazyjakee.frametap.yaml
+          sed -i "s|__SHA256_WINDOWS__|$SHA_WINDOWS|" packaging/winget/krazyjakee.frametap.yaml
+          sed -i "s|InstallerSha256:.*|InstallerSha256: $SHA_WINDOWS|" packaging/winget/krazyjakee.frametap.yaml
+          sed -i "s|/download/v[^/]*/|/download/${{ github.ref_name }}/|" packaging/winget/krazyjakee.frametap.yaml
+
+      - name: Commit updated manifests
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packaging/
+          git diff --cached --quiet || git commit -m "Update package manifests for ${{ github.ref_name }}"
+          git push
