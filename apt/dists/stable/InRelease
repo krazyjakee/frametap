@@ -1,0 +1,43 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Origin: frametap
+Label: frametap
+Suite: stable
+Codename: stable
+Architectures: amd64
+Components: main
+Description: Frametap APT repository
+Date: Sat, 28 Feb 2026 16:34:49 +0000
+MD5Sum:
+ 1cd1ce283b365cce4dc0e6eb7ba34525              177 Release
+ 6f0cf6e253e3aae078b32717f6159d9b              694 main/binary-amd64/Packages
+ ef56b47da223f8346449b20c5de6e498              485 main/binary-amd64/Packages.gz
+SHA1:
+ b06024e1d02af4fde401fe3ab4a9bd9edd26c953              177 Release
+ 255b27a88f5a921d38c10d1c0728385c2df13c06              694 main/binary-amd64/Packages
+ b6c55a8db63d5d84dd7a06161097d33555b837c4              485 main/binary-amd64/Packages.gz
+SHA256:
+ 2b9930b16dfc637421d2d152088e4bc85af5e56ebd4723343026b4cce5811f2b              177 Release
+ 8b1fbba899fbba884299b86d050ae6cd9031fc27a2c55af5f836fd2bbd679512              694 main/binary-amd64/Packages
+ 46c3ae080633bdda02ed9c9361e70fef90c7a32d0a64405aabce6c2b9840bf84              485 main/binary-amd64/Packages.gz
+SHA512:
+ c69a0ce1b29a3050db20eedccef807c347b84a6c560b715c52cb88bc49e074e24ba968080dac37572aae86ca1d32b1ccda2628c2017eb1b6efa5211c427721d2              177 Release
+ b468f86d2e97460cf2a11ff1faa9a321fa1a16015cf9b542e4380f95ad83aeada931f206d72fa1d98ac0ccb893f7db304cf4c3f8ab391febd74bd167592a5165              694 main/binary-amd64/Packages
+ 1bf3048872ffad8515b61ad795962508ab03b5cb22fd4b0e681c4eb81bf2d9a1a58556eedef56457a0e66bddf84ce4b2715be44e83d5f87d47e5157baedd6d6e              485 main/binary-amd64/Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCgAdFiEEPyHMXQauek17AwzBcsE+05ecaQQFAmmjGSkACgkQcsE+05ec
+aQQb3xAAyOll+PrLB1pvG5uRdrFmTSYa50zEhBrfuYq8daQZS1QmhSOHdClF5/oh
+PtJsoNUeD+tzcMwhlSi1CMehKF9Go63Y8+wzYEaGnib7B0K3Eksu3xlBCJAxejKk
+IeTUk8wLVYMx1E0kW/xsEKz8+VZAe/MP/mBQ7TWqTEuSf8Nd6puHIsRJkuPw6BSD
+NBorD/QW27FUs8UK92ZA29FlhiWVL70J6uhbgcUG0WeAaEmyprdrJrkQfO9HPFL3
+TeF0zPOCZ33KdHdPjmOVmU49TvgjdpoFOE/ntT0EoeJ91z8LF6mvKKxre8TpJimt
+1qC/RtAKyJnDOeNrOmWKpD+AQqLj2Xs4Nm7vB83q2rENEhzyUy0h3l7QwhyDMsGB
+iNOJFP7j/UtlOwHnAXBLuvcFQLKgvA/6YbZIRkSHE2lqcGmGm8OoKmE5aKRMJjiD
+iise6rAWCrW5xoF7NoMelSsSDxrNhBsRnTfP0chGIaiDg1pCRKyXAwo1rr9yEi9F
+bhhb4m5s2JNjR9yOQh/3XVfMJoT7YR70s1yPFrhsH+bO2FFQWXhmZxVYCDUc7ycH
+t3mUS6ZYiyxdmzgVlwjrJpAP1+ndaZ5XgWmkcCZqy3kXn7Mcvg94zfMCN6BUZ0Xl
+9/TQYlePAHfcZX43fcvxu1Ym3qDVg1hKtWeS7KMwRvsiog4Bg3c=
+=p1uB
+-----END PGP SIGNATURE-----
