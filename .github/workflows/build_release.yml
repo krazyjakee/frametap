@@ -285,7 +285,7 @@ jobs:
           cd ../../..
 
           # Export public key for users
-          gpg --armor --export "$GPG_KEY_ID" > site/apt/frametap.gpg.key
+          gpg --armor --export "$GPG_KEY_ID" > apt/frametap.gpg.key
 
       - name: Push to gh-pages
         run: |
