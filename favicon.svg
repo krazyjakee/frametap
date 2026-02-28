@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Outer frame corners -->
+  <path d="M4 10V6a2 2 0 0 1 2-2h4"/>
+  <path d="M22 4h4a2 2 0 0 1 2 2v4"/>
+  <path d="M28 22v4a2 2 0 0 1-2 2h-4"/>
+  <path d="M10 28H6a2 2 0 0 1-2-2v-4"/>
+  <!-- Center crosshair -->
+  <circle cx="16" cy="16" r="4"/>
+  <line x1="16" y1="10" x2="16" y2="13"/>
+  <line x1="16" y1="19" x2="16" y2="22"/>
+  <line x1="10" y1="16" x2="13" y2="16"/>
+  <line x1="19" y1="16" x2="22" y2="16"/>
+</svg>

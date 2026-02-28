@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frametap — Cross-platform screen capture</title>
+  <meta name="description" content="Cross-platform screen capture for macOS, Linux, and Windows. GUI app, CLI tool, and C++ library.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ===== Hero ===== -->
+  <section class="hero">
+    <div class="container">
+      <h1>Frametap</h1>
+      <p class="tagline">Cross-platform screen capture for macOS, Linux, and Windows.</p>
+      <div class="hero-buttons">
+        <a href="#install" class="btn btn-primary">Install</a>
+        <a href="https://github.com/krazyjakee/frametap" class="btn">GitHub</a>
+        <a href="https://github.com/krazyjakee/frametap/releases" class="btn">Releases</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Features ===== -->
+  <section id="features">
+    <div class="container">
+      <h2>What you get</h2>
+      <div class="features-grid">
+        <div class="feature-card">
+          <span class="icon">&#128421;</span>
+          <h3>GUI App</h3>
+          <p>Graphical app with live preview of any monitor or window. Click to capture, save as PNG.</p>
+        </div>
+        <div class="feature-card">
+          <span class="icon">&#9000;</span>
+          <h3>CLI Tool</h3>
+          <p>Interactive command-line tool. Capture monitors, windows, or regions from your terminal.</p>
+        </div>
+        <div class="feature-card">
+          <span class="icon">&#128218;</span>
+          <h3>C++ Library</h3>
+          <p>Static C++ library you can embed in your own apps. Screenshot or stream frames with a simple API.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Quick Start ===== -->
+  <section id="quickstart">
+    <div class="container">
+      <h2>Quick Start</h2>
+      <div class="code-block">
+        <span class="code-label">bash</span>
+        <button class="copy-btn" data-copy>Copy</button>
+        <pre><code># List available monitors
+frametap --list-monitors
+
+# Capture a monitor by ID
+frametap --monitor 1
+
+# Capture a window by ID
+frametap --window 12345
+
+# Capture a region (x,y,width,height)
+frametap --region 0,0,1920,1080
+
+# Save to a custom file
+frametap --monitor 1 -o desktop.bmp
+
+# Interactive mode (menu-driven)
+frametap --interactive</code></pre>
+      </div>
+      <p>Run <code>frametap --help</code> to see all options.</p>
+    </div>
+  </section>
+
+  <!-- ===== Platform Support ===== -->
+  <section id="platforms">
+    <div class="container">
+      <h2>Platform Support</h2>
+      <table class="platform-table">
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>macOS 12.3+</td>
+            <td class="status-full">Fully supported</td>
+          </tr>
+          <tr>
+            <td>macOS 10.15+</td>
+            <td class="status-partial">Screenshots only (older fallback)</td>
+          </tr>
+          <tr>
+            <td>Linux (Wayland)</td>
+            <td class="status-full">Fully supported &mdash; GNOME, KDE, Sway, Hyprland</td>
+          </tr>
+          <tr>
+            <td>Linux (X11)</td>
+            <td class="status-full">Fully supported</td>
+          </tr>
+          <tr>
+            <td>Windows 10+</td>
+            <td class="status-full">Fully supported</td>
+          </tr>
+          <tr>
+            <td>Windows 8+</td>
+            <td class="status-partial">Screenshots only (GDI fallback)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ===== Install =====
+       Installation commands mirror the README on main exactly.
+       Canonical source: https://github.com/krazyjakee/frametap/blob/main/README.md
+  -->
+  <section id="install">
+    <div class="container">
+      <h2>Install</h2>
+      <div class="install-methods">
+
+        <!-- Homebrew -->
+        <div class="install-method">
+          <h3>macOS (Homebrew)</h3>
+          <div class="code-block">
+            <button class="copy-btn" data-copy>Copy</button>
+            <pre><code>brew tap krazyjakee/tap
+brew install frametap</code></pre>
+          </div>
+        </div>
+
+        <!-- APT -->
+        <div class="install-method">
+          <h3>Ubuntu / Debian (apt)</h3>
+          <div class="code-block">
+            <button class="copy-btn" data-copy>Copy</button>
+            <pre><code>curl -fsSL https://krazyjakee.github.io/frametap/apt/frametap.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/frametap.gpg
+echo "deb [signed-by=/usr/share/keyrings/frametap.gpg] https://krazyjakee.github.io/frametap/apt stable main" | sudo tee /etc/apt/sources.list.d/frametap.list
+sudo apt update
+sudo apt install frametap</code></pre>
+          </div>
+          <p>Or download the <code>.deb</code> from the <a href="https://github.com/krazyjakee/frametap/releases">Releases page</a> and install with <code>sudo apt install ./frametap_*.deb</code>.</p>
+        </div>
+
+        <!-- Quick install -->
+        <div class="install-method">
+          <h3>Linux (quick install)</h3>
+          <div class="code-block">
+            <button class="copy-btn" data-copy>Copy</button>
+            <pre><code>curl -fsSL https://raw.githubusercontent.com/krazyjakee/frametap/main/install.sh | sh</code></pre>
+          </div>
+        </div>
+
+        <!-- AUR -->
+        <div class="install-method">
+          <h3>Arch Linux (AUR)</h3>
+          <div class="code-block">
+            <button class="copy-btn" data-copy>Copy</button>
+            <pre><code>yay -S frametap-bin</code></pre>
+          </div>
+        </div>
+
+        <!-- Scoop -->
+        <div class="install-method">
+          <h3>Windows (Scoop)</h3>
+          <div class="code-block">
+            <button class="copy-btn" data-copy>Copy</button>
+            <pre><code>scoop bucket add frametap https://github.com/krazyjakee/scoop-frametap
+scoop install frametap</code></pre>
+          </div>
+        </div>
+
+        <!-- winget -->
+        <div class="install-method">
+          <h3>Windows (winget)</h3>
+          <div class="code-block">
+            <button class="copy-btn" data-copy>Copy</button>
+            <pre><code>winget install krazyjakee.frametap</code></pre>
+          </div>
+        </div>
+
+        <!-- Binary download -->
+        <div class="install-method">
+          <h3>Download binaries</h3>
+          <p>Grab the latest release for your platform from the <a href="https://github.com/krazyjakee/frametap/releases">Releases page</a>. Each release includes:</p>
+          <ul style="color: var(--text-muted); font-size: 0.9rem; padding-left: 1.25rem; margin-top: 0.5rem;">
+            <li><strong>GUI</strong> &mdash; <code>frametap_gui</code> &mdash; graphical app with live preview</li>
+            <li><strong>CLI</strong> &mdash; <code>frametap</code> &mdash; interactive command-line tool</li>
+            <li><strong>Library</strong> &mdash; <code>lib/</code> and <code>include/</code> &mdash; static C++ library for developers</li>
+          </ul>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Support ===== -->
+  <section id="support">
+    <div class="container">
+      <h2>Support</h2>
+      <p style="margin-bottom: 1rem;">If you find Frametap useful, consider sponsoring to help sustain and grow it.</p>
+      <div class="support-links">
+        <a href="https://ko-fi.com/krazyjakee" class="btn">Ko-fi</a>
+        <a href="https://github.com/sponsors/krazyjakee" class="btn">GitHub Sponsors</a>
+      </div>
+      <p class="support-note">This is optional support. Frametap remains free and open-source regardless.</p>
+    </div>
+  </section>
+
+  <!-- ===== Footer ===== -->
+  <footer>
+    <div class="container">
+      <nav>
+        <a href="https://github.com/krazyjakee/frametap">GitHub</a>
+        <a href="https://github.com/krazyjakee/frametap/releases">Releases</a>
+        <a href="https://github.com/krazyjakee/frametap/blob/main/LICENSE">MIT License</a>
+      </nav>
+      <p>&copy; 2025 krazyjakee. Built with care, no frameworks.</p>
+    </div>
+  </footer>
+
+  <!-- ===== Copy-to-clipboard ===== -->
+  <script>
+    document.querySelectorAll('[data-copy]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var code = btn.closest('.code-block').querySelector('code');
+        var text = code.textContent;
+        navigator.clipboard.writeText(text).then(function () {
+          btn.textContent = 'Copied!';
+          setTimeout(function () { btn.textContent = 'Copy'; }, 1500);
+        });
+      });
+    });
+  </script>
+
+</body>
+</html>
