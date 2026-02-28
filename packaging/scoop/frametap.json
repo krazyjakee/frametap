@@ -1,11 +1,11 @@
 {
-  "version": "1.0.0",
+  "version": "0.1.2",
   "description": "Cross-platform screen capture CLI for macOS, Linux, and Windows",
   "homepage": "https://github.com/krazyjakee/frametap",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/krazyjakee/frametap/releases/download/v1.0.0/frametap-cli-windows.zip",
+      "url": "https://github.com/krazyjakee/frametap/releases/download/v0.1.2/frametap-cli-windows.zip",
       "hash": "__SHA256_WINDOWS__"
     }
   },

@@ -2,7 +2,7 @@
 
 Cross-platform screen capture for **macOS**, **Linux**, and **Windows**.
 
-Frametap lets you take screenshots of your entire screen, a specific monitor, a window, or a custom region. It works as a standalone command-line tool or as a C++ library you can embed in your own apps.
+Frametap lets you capture your entire screen, a specific monitor, a window, or a custom region. It ships as a **GUI app**, a **command-line tool**, and a **C++ library** you can embed in your own apps.
 
 ## Install
 
@@ -52,6 +52,11 @@ winget install krazyjakee.frametap
 ### Download binaries
 
 Grab the latest release for your platform from the [Releases page](https://github.com/krazyjakee/frametap/releases).
+
+Each release includes separate downloads for:
+- **GUI** — `frametap_gui` (or `frametap_gui.exe`) — graphical app with live preview
+- **CLI** — `frametap` (or `frametap.exe`) — interactive command-line tool
+- **Library** — `lib/` and `include/` — static C++ library for developers
 
 ## Quick Start
 
@@ -124,6 +129,63 @@ Linux automatically detects Wayland vs X11 at runtime.
 
 ---
 
+## GUI
+
+The graphical app gives you a live preview of any monitor or window on your system.
+
+### Usage
+
+Launch the app:
+
+```
+./frametap_gui
+```
+
+The window has two panels:
+
+- **Sidebar** — Lists all connected monitors and visible windows. Click any source to start capturing it. Hit **Refresh** to re-scan if you plug in a display or open a new window.
+- **Preview** — Shows a live, aspect-ratio-preserving view of the selected source. Click **Save PNG** to save the current frame as `screenshot.png` in the working directory.
+
+### Requirements
+
+The GUI requires OpenGL 3.2+ and GLFW. See [Dependencies](#dependencies) for install instructions.
+
+---
+
+## CLI
+
+The command-line tool runs an interactive menu in your terminal.
+
+### Usage
+
+```
+./frametap
+```
+
+It will:
+1. Check that your system has the right permissions for screen capture
+2. Present a capture mode menu
+3. Save the result as `screenshot.bmp` in the current directory
+
+### Capture Modes
+
+```
+Capture mode:
+  1) Screen (pick a monitor)
+  2) Window (pick a window)
+  3) Region (enter coordinates)
+```
+
+- **Screen** — Lists all connected monitors with resolution and DPI scale. Enter a number to capture that monitor.
+- **Window** — Lists all visible windows with their dimensions. Enter a number to capture that window.
+- **Region** — Prompts for `x`, `y`, `width`, and `height` to capture an arbitrary rectangle.
+
+### Output
+
+The CLI saves a 24-bit BMP file named `screenshot.bmp` in the current working directory. The file is overwritten on each run.
+
+---
+
 ## Building from Source
 
 If you'd rather build Frametap yourself instead of downloading a release, you'll need C++20 and [SCons](https://scons.org/).
@@ -134,13 +196,19 @@ scons
 
 # Build the CLI tool
 scons cli
+
+# Build the GUI app
+scons gui
 ```
 
-This produces `libframetap.a` (or `frametap.lib` on Windows) and `cli/frametap`.
+This produces:
+- `libframetap.a` (or `frametap.lib` on Windows) — static library
+- `cli/frametap` — command-line tool
+- `gui/frametap_gui` — graphical app
 
 ### Dependencies
 
-**macOS** — Just Xcode command-line tools (`xcode-select --install`).
+**macOS** — Xcode command-line tools (`xcode-select --install`). For the GUI, also install GLFW: `brew install glfw`.
 
 **Linux** — Install the development libraries for your distro:
 
@@ -164,6 +232,17 @@ sudo pacman -S \
   pkg-config
 ```
 
+For the GUI, also install GLFW:
+
+```bash
+# Debian / Ubuntu
+sudo apt install libglfw3-dev
+# Fedora
+sudo dnf install glfw-devel
+# Arch
+sudo pacman -S glfw
+```
+
 For Wayland, you also need a portal backend for your compositor:
 
 ```bash
@@ -177,7 +256,7 @@ sudo apt install xdg-desktop-portal-wlr
 # install xdg-desktop-portal-hyprland from your distro or AUR
 ```
 
-**Windows** — MSVC with C++20 support. No extra libraries needed.
+**Windows** — MSVC with C++20 support. For the GUI, install GLFW via [vcpkg](https://vcpkg.io/): `vcpkg install glfw3:x64-windows-static`.
 
 ---
 

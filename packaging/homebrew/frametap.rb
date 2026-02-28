@@ -2,7 +2,7 @@ class Frametap < Formula
   desc "Cross-platform screen capture CLI for macOS, Linux, and Windows"
   homepage "https://github.com/krazyjakee/frametap"
   license "MIT"
-  version "1.0.0"
+  version "0.1.2"
 
   on_macos do
     url "https://github.com/krazyjakee/frametap/releases/download/v#{version}/frametap-cli-macos.zip"
