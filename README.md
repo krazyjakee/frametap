@@ -13,6 +13,14 @@ brew tap krazyjakee/tap
 brew install frametap
 ```
 
+### Ubuntu / Debian (.deb)
+
+Download the `.deb` from the [Releases page](https://github.com/krazyjakee/frametap/releases) and install:
+
+```bash
+sudo apt install ./frametap_*.deb
+```
+
 ### Linux (quick install)
 
 ```bash

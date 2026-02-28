@@ -134,6 +134,21 @@ jobs:
             cp cli/frametap pkg-cli/
           fi
 
+      # --- Build .deb package (Linux only) ---
+      - name: Build .deb package
+        if: matrix.platform == 'linux'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${VERSION:-1.0.0}"
+          bash packaging/debian/build-deb.sh cli/frametap "$VERSION"
+
+      - name: Upload .deb artifact
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frametap-deb
+          path: frametap_*.deb
+
       # --- Package GUI ---
       - name: Package GUI
         shell: bash
@@ -184,10 +199,11 @@ jobs:
               cd ../..
             done
           done
+          cp artifacts/frametap-deb/*.deb .
 
       - name: Generate checksums
         run: |
-          sha256sum frametap-*.zip > checksums-sha256.txt
+          sha256sum frametap-*.zip frametap_*.deb > checksums-sha256.txt
           cat checksums-sha256.txt
 
       - name: Create Release
@@ -203,6 +219,7 @@ jobs:
             frametap-gui-linux.zip
             frametap-gui-windows.zip
             frametap-gui-macos.zip
+            frametap_*.deb
             checksums-sha256.txt
           name: frametap-${{ github.ref_name }}
 
