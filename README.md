@@ -355,6 +355,16 @@ env.Append(LIBS=['frametap'])
 
 All errors throw `frametap::CaptureError` (inherits `std::runtime_error`) with platform-specific messages and actionable advice.
 
+## Support
+
+Hi! I'm krazyjakee, creator and maintainer of Frametap. If you find this project useful, consider sponsoring to help sustain and grow it: more dev time, better docs, more features, and deeper community support.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/krazyjakee)
+
+Every contribution helps maintain and improve this project and encourages me to make more projects like this!
+
+*This is optional support. The tool remains free and open-source regardless.*
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
