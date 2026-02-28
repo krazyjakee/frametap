@@ -223,6 +223,79 @@ jobs:
             checksums-sha256.txt
           name: frametap-${{ github.ref_name }}
 
+  update-apt-repo:
+    name: Publish to APT repository
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frametap-deb
+          path: debs
+
+      - name: Import GPG key
+        run: |
+          echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format long 2>/dev/null | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
+          echo "GPG_KEY_ID=$GPG_KEY_ID" >> $GITHUB_ENV
+
+      - name: Update APT repository
+        run: |
+          sudo apt-get update && sudo apt-get install -y dpkg-dev
+
+          mkdir -p site/apt/pool site/apt/dists/stable/main/binary-amd64
+          cp debs/*.deb site/apt/pool/
+
+          cd site/apt
+
+          # Generate Packages index
+          dpkg-scanpackages --multiversion pool > dists/stable/main/binary-amd64/Packages
+          gzip -k -f dists/stable/main/binary-amd64/Packages
+
+          # Generate Release file
+          cd dists/stable
+          cat > Release <<RELEASE
+          Origin: frametap
+          Label: frametap
+          Suite: stable
+          Codename: stable
+          Architectures: amd64
+          Components: main
+          Description: Frametap APT repository
+          RELEASE
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' Release
+
+          apt-ftparchive release . >> Release
+
+          # Sign the Release file
+          gpg --batch --yes --default-key "$GPG_KEY_ID" -abs -o Release.gpg Release
+          gpg --batch --yes --default-key "$GPG_KEY_ID" --clearsign -o InRelease Release
+
+          cd ../../..
+
+          # Export public key for users
+          gpg --armor --export "$GPG_KEY_ID" > site/apt/frametap.gpg.key
+
+      - name: Push to gh-pages
+        run: |
+          cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Update APT repo for ${{ github.ref_name }}"
+          git push
+
   update-packaging:
     name: Update package manager manifests
     runs-on: ubuntu-latest

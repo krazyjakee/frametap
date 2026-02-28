@@ -13,13 +13,16 @@ brew tap krazyjakee/tap
 brew install frametap
 ```
 
-### Ubuntu / Debian (.deb)
-
-Download the `.deb` from the [Releases page](https://github.com/krazyjakee/frametap/releases) and install:
+### Ubuntu / Debian (apt)
 
 ```bash
-sudo apt install ./frametap_*.deb
+curl -fsSL https://krazyjakee.github.io/frametap/apt/frametap.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/frametap.gpg
+echo "deb [signed-by=/usr/share/keyrings/frametap.gpg] https://krazyjakee.github.io/frametap/apt stable main" | sudo tee /etc/apt/sources.list.d/frametap.list
+sudo apt update
+sudo apt install frametap
 ```
+
+Or download the `.deb` directly from the [Releases page](https://github.com/krazyjakee/frametap/releases) and install with `sudo apt install ./frametap_*.deb`.
 
 ### Linux (quick install)
 
