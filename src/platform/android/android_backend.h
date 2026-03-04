@@ -30,12 +30,13 @@ private:
   ImageData capture_via_projection();
   bool ensure_projection_active();
   ImageData crop(const ImageData &full, Rect region);
-  void capture_loop(std::stop_token token);
+  void capture_loop();
 
   Rect region_{};
 
   FrameCallback callback_;
-  std::jthread capture_thread_;
+  std::thread capture_thread_;
+  std::atomic<bool> stop_requested_{false};
   std::atomic<bool> paused_{false};
 
   // Protects region_ from concurrent access between the capture thread

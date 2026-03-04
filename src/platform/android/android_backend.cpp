@@ -246,14 +246,13 @@ ImageData AndroidBackend::screenshot(Rect region) {
 
 void AndroidBackend::start(FrameCallback cb) {
   callback_ = std::move(cb);
-  capture_thread_ = std::jthread([this](std::stop_token token) {
-    capture_loop(token);
-  });
+  stop_requested_.store(false);
+  capture_thread_ = std::thread([this]() { capture_loop(); });
 }
 
 void AndroidBackend::stop() {
   if (capture_thread_.joinable()) {
-    capture_thread_.request_stop();
+    stop_requested_.store(true);
     capture_thread_.join();
   }
 }
@@ -273,13 +272,13 @@ void AndroidBackend::set_region(Rect region) {
 // Capture loop (streaming, ~60 fps target)
 // ---------------------------------------------------------------------------
 
-void AndroidBackend::capture_loop(std::stop_token token) {
+void AndroidBackend::capture_loop() {
   using clock = std::chrono::steady_clock;
   constexpr auto interval = std::chrono::milliseconds(16); // ~60 fps
 
   auto last_time = clock::now();
 
-  while (!token.stop_requested()) {
+  while (!stop_requested_.load()) {
     if (paused_.load()) {
       std::this_thread::sleep_for(interval);
       last_time = clock::now();
