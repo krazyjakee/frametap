@@ -2,16 +2,21 @@ class Frametap < Formula
   desc "Cross-platform screen capture CLI for macOS, Linux, and Windows"
   homepage "https://github.com/krazyjakee/frametap"
   license "MIT"
-  version "0.1.2"
+  version "0.1.3"
 
   on_macos do
-    url "https://github.com/krazyjakee/frametap/releases/download/v#{version}/frametap-cli-macos.zip"
-    sha256 "9b901649d647c758e23d37502fd840f5783da874464f6e63cdc46ca9f86a6d31"
+    if Hardware::CPU.arm?
+      url "https://github.com/krazyjakee/frametap/releases/download/v#{version}/frametap-cli-macos-arm64.zip"
+      sha256 "__SHA256_MACOS_ARM64__" # macos-arm64
+    else
+      url "https://github.com/krazyjakee/frametap/releases/download/v#{version}/frametap-cli-macos-x86_64.zip"
+      sha256 "__SHA256_MACOS_X86_64__" # macos-x86_64
+    end
   end
 
   on_linux do
     url "https://github.com/krazyjakee/frametap/releases/download/v#{version}/frametap-cli-linux.zip"
-    sha256 "3337570b2e4ac6e81c1d4ed963f30995125cd446eabc1662a07b7e9a9342205a"
+    sha256 "__SHA256_LINUX__" # linux
   end
 
   def install

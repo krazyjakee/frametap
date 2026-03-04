@@ -24,15 +24,31 @@ jobs:
           - os: ubuntu-24.04
             os-name: Linux
             platform: linux
+            artifact-suffix: linux
             lib-name: libframetap.a
           - os: windows-latest
             os-name: Windows
             platform: windows
+            artifact-suffix: windows
             lib-name: frametap.lib
           - os: macos-latest
-            os-name: macOS
+            os-name: macOS (ARM)
             platform: macos
+            macos-arch: arm64
+            artifact-suffix: macos-arm64
             lib-name: libframetap.a
+          - os: macos-latest
+            os-name: macOS (Intel)
+            platform: macos
+            macos-arch: x86_64
+            artifact-suffix: macos-x86_64
+            lib-name: libframetap.a
+          - os: ubuntu-24.04
+            os-name: Android (arm64)
+            platform: android
+            artifact-suffix: android-arm64
+            lib-name: libframetap.a
+            skip-gui: true
 
     steps:
       - name: Checkout repository
@@ -55,9 +71,9 @@ jobs:
             .sconsign.dblite
             src/**/*.o
             src/**/*.obj
-          key: scons-${{ matrix.platform }}-${{ hashFiles('SConstruct', 'src/**/*.cpp', 'src/**/*.mm', 'src/**/*.h', 'include/**/*.h') }}
+          key: scons-${{ matrix.artifact-suffix }}-${{ hashFiles('SConstruct', 'src/**/*.cpp', 'src/**/*.mm', 'src/**/*.h', 'include/**/*.h') }}
           restore-keys: |
-            scons-${{ matrix.platform }}-
+            scons-${{ matrix.artifact-suffix }}-
 
       # --- Linux dependencies ---
       - name: Install Linux dependencies
@@ -71,23 +87,22 @@ jobs:
             pkg-config
 
       # --- macOS dependencies ---
-      # Build GLFW from source as a universal (arm64 + x86_64) binary so that
-      # the CLI and GUI release artifacts work on both Intel and Apple Silicon.
+      # Build GLFW from source for the target architecture.
       - name: Install macOS dependencies
         if: matrix.platform == 'macos'
         run: |
           git clone --depth 1 --branch 3.4 https://github.com/glfw/glfw.git /tmp/glfw
           cmake -S /tmp/glfw -B /tmp/glfw-build \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.macos-arch }}" \
             -DCMAKE_OSX_DEPLOYMENT_TARGET=12.3 \
-            -DCMAKE_INSTALL_PREFIX=/tmp/glfw-universal \
+            -DCMAKE_INSTALL_PREFIX=/tmp/glfw-${{ matrix.macos-arch }} \
             -DBUILD_SHARED_LIBS=OFF \
             -DGLFW_BUILD_EXAMPLES=OFF \
             -DGLFW_BUILD_TESTS=OFF \
             -DGLFW_BUILD_DOCS=OFF
           cmake --build /tmp/glfw-build --config Release
           cmake --install /tmp/glfw-build
-          echo "GLFW_PREFIX=/tmp/glfw-universal" >> $GITHUB_ENV
+          echo "GLFW_PREFIX=/tmp/glfw-${{ matrix.macos-arch }}" >> $GITHUB_ENV
 
       # --- Windows dependencies ---
       - name: Install Windows dependencies
@@ -97,15 +112,25 @@ jobs:
           vcpkg install glfw3:x64-windows-static
           echo "VCPKG_ROOT=$VCPKG_INSTALLATION_ROOT" >> $GITHUB_ENV
 
+      # --- Android NDK ---
+      - name: Set up Android NDK toolchain
+        if: matrix.platform == 'android'
+        run: |
+          NDK="${ANDROID_NDK_LATEST_HOME}"
+          TOOLCHAIN="${NDK}/toolchains/llvm/prebuilt/linux-x86_64"
+          echo "CXX=${TOOLCHAIN}/bin/aarch64-linux-android24-clang++" >> $GITHUB_ENV
+          echo "AR=${TOOLCHAIN}/bin/llvm-ar" >> $GITHUB_ENV
+
       # --- Build ---
       - name: Build static library
-        run: scons ${{ matrix.platform == 'windows' && 'crt=static' || '' }}
+        run: scons ${{ matrix.platform == 'android' && 'target=android' || '' }} ${{ matrix.platform == 'windows' && 'crt=static' || '' }} ${{ matrix.macos-arch && format('macos_arch={0}', matrix.macos-arch) || '' }}
 
       - name: Build CLI
-        run: scons cli ${{ matrix.platform == 'windows' && 'crt=static' || '' }}
+        run: scons cli ${{ matrix.platform == 'android' && 'target=android' || '' }} ${{ matrix.platform == 'windows' && 'crt=static' || '' }} ${{ matrix.macos-arch && format('macos_arch={0}', matrix.macos-arch) || '' }}
 
       - name: Build GUI
-        run: scons gui ${{ matrix.platform == 'windows' && 'crt=static' || '' }} ${{ matrix.platform == 'macos' && 'universal_gui=1' || '' }}
+        if: ${{ !matrix.skip-gui }}
+        run: scons gui ${{ matrix.platform == 'windows' && 'crt=static' || '' }} ${{ matrix.macos-arch && format('macos_arch={0} universal_gui=1', matrix.macos-arch) || '' }}
 
       # --- Ad-hoc codesign macOS binaries so Gatekeeper doesn't block them ---
       - name: Codesign macOS binaries
@@ -151,6 +176,7 @@ jobs:
 
       # --- Package GUI ---
       - name: Package GUI
+        if: ${{ !matrix.skip-gui }}
         shell: bash
         run: |
           mkdir -p pkg-gui
@@ -164,19 +190,20 @@ jobs:
       - name: Upload library artifact
         uses: actions/upload-artifact@v4
         with:
-          name: frametap-lib-${{ matrix.platform }}
+          name: frametap-lib-${{ matrix.artifact-suffix }}
           path: pkg-lib/
 
       - name: Upload CLI artifact
         uses: actions/upload-artifact@v4
         with:
-          name: frametap-cli-${{ matrix.platform }}
+          name: frametap-cli-${{ matrix.artifact-suffix }}
           path: pkg-cli/
 
       - name: Upload GUI artifact
+        if: ${{ !matrix.skip-gui }}
         uses: actions/upload-artifact@v4
         with:
-          name: frametap-gui-${{ matrix.platform }}
+          name: frametap-gui-${{ matrix.artifact-suffix }}
           path: pkg-gui/
 
   release:
@@ -192,12 +219,19 @@ jobs:
 
       - name: Package releases
         run: |
-          for component in lib cli gui; do
-            for platform in linux windows macos; do
-              cd artifacts/frametap-$component-$platform
-              zip -r ../../frametap-$component-$platform.zip .
+          # Lib and CLI: all platforms including Android
+          for component in lib cli; do
+            for suffix in linux windows macos-arm64 macos-x86_64 android-arm64; do
+              cd artifacts/frametap-$component-$suffix
+              zip -r ../../frametap-$component-$suffix.zip .
               cd ../..
             done
+          done
+          # GUI: desktop platforms only (no Android)
+          for suffix in linux windows macos-arm64 macos-x86_64; do
+            cd artifacts/frametap-gui-$suffix
+            zip -r ../../frametap-gui-$suffix.zip .
+            cd ../..
           done
           cp artifacts/frametap-deb/*.deb .
 
@@ -212,13 +246,18 @@ jobs:
           files: |
             frametap-lib-linux.zip
             frametap-lib-windows.zip
-            frametap-lib-macos.zip
+            frametap-lib-macos-arm64.zip
+            frametap-lib-macos-x86_64.zip
+            frametap-lib-android-arm64.zip
             frametap-cli-linux.zip
             frametap-cli-windows.zip
-            frametap-cli-macos.zip
+            frametap-cli-macos-arm64.zip
+            frametap-cli-macos-x86_64.zip
+            frametap-cli-android-arm64.zip
             frametap-gui-linux.zip
             frametap-gui-windows.zip
-            frametap-gui-macos.zip
+            frametap-gui-macos-arm64.zip
+            frametap-gui-macos-x86_64.zip
             frametap_*.deb
             checksums-sha256.txt
           name: frametap-${{ github.ref_name }}
@@ -310,23 +349,26 @@ jobs:
       - name: Download release artifacts for checksums
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          for platform in linux macos windows; do
-            curl -sL -o "frametap-cli-$platform.zip" \
-              "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/frametap-cli-$platform.zip"
+          for suffix in linux macos-arm64 macos-x86_64 windows; do
+            curl -sL -o "frametap-cli-$suffix.zip" \
+              "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/frametap-cli-$suffix.zip"
           done
           SHA_LINUX=$(sha256sum frametap-cli-linux.zip | cut -d' ' -f1)
-          SHA_MACOS=$(sha256sum frametap-cli-macos.zip | cut -d' ' -f1)
+          SHA_MACOS_ARM64=$(sha256sum frametap-cli-macos-arm64.zip | cut -d' ' -f1)
+          SHA_MACOS_X86_64=$(sha256sum frametap-cli-macos-x86_64.zip | cut -d' ' -f1)
           SHA_WINDOWS=$(sha256sum frametap-cli-windows.zip | cut -d' ' -f1)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "SHA_LINUX=$SHA_LINUX" >> $GITHUB_ENV
-          echo "SHA_MACOS=$SHA_MACOS" >> $GITHUB_ENV
+          echo "SHA_MACOS_ARM64=$SHA_MACOS_ARM64" >> $GITHUB_ENV
+          echo "SHA_MACOS_X86_64=$SHA_MACOS_X86_64" >> $GITHUB_ENV
           echo "SHA_WINDOWS=$SHA_WINDOWS" >> $GITHUB_ENV
 
       - name: Update Homebrew formula
         run: |
           sed -i "s/version \".*\"/version \"$VERSION\"/" packaging/homebrew/frametap.rb
-          sed -i "s|__SHA256_MACOS__|$SHA_MACOS|" packaging/homebrew/frametap.rb
-          sed -i "s|__SHA256_LINUX__|$SHA_LINUX|" packaging/homebrew/frametap.rb
+          sed -i "s|sha256 \".*\" # macos-arm64|sha256 \"$SHA_MACOS_ARM64\" # macos-arm64|" packaging/homebrew/frametap.rb
+          sed -i "s|sha256 \".*\" # macos-x86_64|sha256 \"$SHA_MACOS_X86_64\" # macos-x86_64|" packaging/homebrew/frametap.rb
+          sed -i "s|sha256 \".*\" # linux|sha256 \"$SHA_LINUX\" # linux|" packaging/homebrew/frametap.rb
 
       - name: Update Scoop manifest
         run: |

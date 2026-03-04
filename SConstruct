@@ -1,8 +1,11 @@
 import sys
 import os
 
-# --- Platform detection ---
+# --- Platform / target detection ---
+# Usage: scons target=android   (cross-compile for Android via NDK)
+# By default, target matches the host platform.
 platform = sys.platform  # 'darwin', 'linux', 'win32'
+target = ARGUMENTS.get('target', platform)
 
 # --- Sanitizer option ---
 # Usage: scons sanitize=address
@@ -10,11 +13,16 @@ platform = sys.platform  # 'darwin', 'linux', 'win32'
 #        scons sanitize=undefined
 sanitize = ARGUMENTS.get('sanitize', 'none')
 
+# --- macOS architecture option ---
+# Usage: scons macos_arch=arm64      (Apple Silicon only)
+#        scons macos_arch=x86_64     (Intel only)
+#        scons macos_arch=universal   (default: fat binary for both)
+macos_arch = ARGUMENTS.get('macos_arch', 'universal')
+
 # --- Universal GUI option (macOS only) ---
 # Usage: scons gui universal_gui=1
-# When set, the GUI keeps multi-arch flags (-arch arm64 -arch x86_64).
-# Requires a universal GLFW (e.g. built from source); Homebrew GLFW is
-# single-arch so this is off by default.
+# When set, the GUI uses GLFW from GLFW_PREFIX (e.g. built from source)
+# instead of Homebrew's single-arch GLFW.
 universal_gui = ARGUMENTS.get('universal_gui', '0') == '1'
 
 # --- CRT linkage option (Windows only) ---
@@ -26,7 +34,7 @@ if crt not in ('static', 'dynamic'):
     Exit(1)
 
 # --- Common C++ environment ---
-if platform == 'win32':
+if platform == 'win32' and target != 'android':
     # MSVC on Windows — use /std:c++20 instead of -std=c++20
     crt_flag = '/MT' if crt == 'static' else '/MD'
     env = Environment(
@@ -37,6 +45,11 @@ if platform == 'win32':
         env.Append(CXXFLAGS=['/fsanitize=address'])
         env.Append(LINKFLAGS=['/fsanitize=address'])
 else:
+    _link_flags = []
+    if target == 'android':
+        _link_flags = ['-pie']  # Android requires PIE
+    elif platform.startswith('linux'):
+        _link_flags = ['-pie', '-Wl,-z,relro,-z,now']
     env = Environment(
         CPPPATH=['include', 'src'],
         CXXFLAGS=[
@@ -44,8 +57,16 @@ else:
             '-Wformat', '-Wformat-security', '-O2',
             '-fstack-protector-strong', '-D_FORTIFY_SOURCE=2', '-fPIC',
         ],
-        LINKFLAGS=['-pie', '-Wl,-z,relro,-z,now'] if platform.startswith('linux') else [],
+        LINKFLAGS=_link_flags,
     )
+    if target == 'android':
+        # Use Android NDK compiler if CXX is not already set via environment
+        ndk_cxx = os.environ.get('CXX', '')
+        if ndk_cxx:
+            env['CXX'] = ndk_cxx
+        elif os.environ.get('ANDROID_NDK'):
+            # Common NDK toolchain path — caller should set CXX explicitly
+            pass
     if sanitize in ('address', 'thread', 'undefined'):
         san_flags = [f'-fsanitize={sanitize}', '-fno-omit-frame-pointer', '-g']
         env.Append(CXXFLAGS=san_flags, LINKFLAGS=san_flags)
@@ -53,14 +74,27 @@ else:
 sources = ['src/frametap.cpp']
 
 # --- Platform-specific configuration ---
-if platform == 'darwin':
+if target == 'android':
+    # Android: screencap-based backend, no special library dependencies.
+    # Cross-compile with NDK: scons target=android CXX=/path/to/ndk-clang++
+    sources += [
+        'src/platform/android/android_backend.cpp',
+    ]
+
+elif platform == 'darwin':
     env['CXX'] = 'clang++'
+    # Resolve architecture flags from macos_arch option
+    if macos_arch == 'universal':
+        _arch_flags = ['-arch', 'arm64', '-arch', 'x86_64']
+    elif macos_arch in ('arm64', 'x86_64'):
+        _arch_flags = ['-arch', macos_arch]
+    else:
+        print(f"Invalid macos_arch={macos_arch}; expected 'universal', 'arm64', or 'x86_64'")
+        Exit(1)
     # Objective-C++ for .mm files; target macOS 12.3+ (ScreenCaptureKit minimum)
     env.Append(
-        CXXFLAGS=['-fobjc-arc', '-mmacosx-version-min=12.3',
-                  '-arch', 'arm64', '-arch', 'x86_64'],
-        LINKFLAGS=['-mmacosx-version-min=12.3',
-                   '-arch', 'arm64', '-arch', 'x86_64'],
+        CXXFLAGS=['-fobjc-arc', '-mmacosx-version-min=12.3'] + _arch_flags,
+        LINKFLAGS=['-mmacosx-version-min=12.3'] + _arch_flags,
         FRAMEWORKS=[
             'Foundation',
             'AppKit',
@@ -72,7 +106,7 @@ if platform == 'darwin':
     )
     sources += ['src/platform/macos/macos_backend.mm']
 
-elif platform.startswith('linux'):
+elif platform.startswith('linux') and target != 'android':
     # X11 libraries
     env.Append(LIBS=['X11', 'Xext', 'Xfixes', 'Xinerama'])
 

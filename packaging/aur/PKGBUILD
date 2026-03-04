@@ -1,6 +1,6 @@
 # Maintainer: Jacob Cattrall <https://github.com/krazyjakee>
 pkgname=frametap-bin
-pkgver=0.1.2
+pkgver=0.1.3
 pkgrel=1
 pkgdesc="Cross-platform screen capture CLI for macOS, Linux, and Windows"
 arch=('x86_64')

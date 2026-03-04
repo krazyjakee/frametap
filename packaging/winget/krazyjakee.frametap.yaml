@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.singleton.1.6.0.schema.json
 PackageIdentifier: krazyjakee.frametap
-PackageVersion: 0.1.2
+PackageVersion: 0.1.3
 PackageLocale: en-US
 Publisher: Jacob Cattrall
 PackageName: frametap
@@ -9,7 +9,7 @@ ShortDescription: Cross-platform screen capture CLI for macOS, Linux, and Window
 PackageUrl: https://github.com/krazyjakee/frametap
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/krazyjakee/frametap/releases/download/v0.1.2/frametap-cli-windows.zip
+    InstallerUrl: https://github.com/krazyjakee/frametap/releases/download/v0.1.3/frametap-cli-windows.zip
     InstallerSha256: 7e3af3d4e5175d7d7d40d2b03e9dccc8f880f94a1797eb9a40b9e8490d12f9a9
     InstallerType: zip
     NestedInstallerType: portable

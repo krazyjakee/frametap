@@ -9,9 +9,16 @@ INSTALL_DIR="${FRAMETAP_INSTALL_DIR:-/usr/local/bin}"
 
 get_platform() {
     os="$(uname -s)"
+    arch="$(uname -m)"
     case "$os" in
         Linux)  echo "linux" ;;
-        Darwin) echo "macos" ;;
+        Darwin)
+            case "$arch" in
+                arm64)  echo "macos-arm64" ;;
+                x86_64) echo "macos-x86_64" ;;
+                *)      echo "Unsupported macOS architecture: $arch" >&2; exit 1 ;;
+            esac
+            ;;
         *)      echo "Unsupported OS: $os" >&2; exit 1 ;;
     esac
 }
