@@ -39,7 +39,7 @@ android {
     sourceSets {
         main {
             // Include the existing frametap Java classes alongside the GUI Activity
-            java.srcDirs += '../../../../src/platform/android/java'
+            java.srcDirs += '../../src/platform/android/java'
         }
     }
 
