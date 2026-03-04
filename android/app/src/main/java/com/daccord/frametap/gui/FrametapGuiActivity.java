@@ -1,7 +1,10 @@
 package com.daccord.frametap.gui;
 
+import android.Manifest;
 import android.app.Activity;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.widget.Button;
@@ -67,7 +70,18 @@ public class FrametapGuiActivity extends Activity {
         }
     }
 
+    private void ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2001);
+            }
+        }
+    }
+
     private void startCapture() {
+        ensureNotificationPermission();
         textStatus.setText("Status: Requesting consent...");
         btnCapture.setEnabled(false);
 
