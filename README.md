@@ -1,6 +1,6 @@
 # Frametap
 
-Cross-platform screen capture for **macOS**, **Linux**, and **Windows**.
+Cross-platform screen capture for **macOS**, **Linux**, **Windows**, and **Android**.
 
 Frametap lets you capture your entire screen, a specific monitor, a window, or a custom region. It ships as a **GUI app**, a **command-line tool**, and a **C++ library** you can embed in your own apps.
 
@@ -54,9 +54,16 @@ winget install krazyjakee.frametap
 Grab the latest release for your platform from the [Releases page](https://github.com/krazyjakee/frametap/releases).
 
 Each release includes separate downloads for:
-- **GUI** — `frametap_gui` (or `frametap_gui.exe`) — graphical app with live preview
+- **GUI** — `frametap_gui` (or `frametap_gui.exe`) — graphical app with live preview (desktop platforms only)
 - **CLI** — `frametap` (or `frametap.exe`) — interactive command-line tool
 - **Library** — `lib/` and `include/` — static C++ library for developers
+
+Available platform archives:
+- `linux` — Linux x86_64
+- `windows` — Windows x64
+- `macos-arm64` — macOS Apple Silicon
+- `macos-x86_64` — macOS Intel
+- `android-arm64` — Android ARM64 (library and CLI only)
 
 ## Quick Start
 
@@ -116,14 +123,15 @@ Options:
 
 ## Platform Support
 
-| Platform | Status |
-|---|---|
-| macOS 12.3+ | Fully supported |
-| macOS 10.15+ | Screenshots only (older fallback) |
-| Linux (Wayland) | Fully supported — GNOME, KDE, Sway, Hyprland |
-| Linux (X11) | Fully supported |
-| Windows 10+ | Fully supported |
-| Windows 8+ | Screenshots only (GDI fallback) |
+| Platform | Screenshots | Per Window | Region | Notes |
+|---|:---:|:---:|:---:|---|
+| macOS 12.3+ (ARM64 / Intel) | ✅ | ✅ | ✅ | Streaming via ScreenCaptureKit |
+| macOS 10.15+ | ✅ | ❌ | ✅ | No streaming (CoreGraphics fallback) |
+| Linux (Wayland) | ✅ | ✅ | ✅ | GNOME, KDE, Sway, Hyprland |
+| Linux (X11) | ✅ | ✅ | ✅ | |
+| Windows 10+ | ✅ | ✅ | ✅ | Streaming via DXGI |
+| Windows 8+ | ✅ | ✅ | ✅ | No streaming (GDI fallback) |
+| Android (ARM64) | ✅ | ❌ | ✅ | Library and CLI only |
 
 Linux automatically detects Wayland vs X11 at runtime.
 

@@ -20,6 +20,15 @@ std::vector<Window> get_windows();
 // whether required permissions are granted, dependencies are available, etc.
 PermissionCheck check_permissions();
 
+#ifdef __ANDROID__
+// Initialize the Android JNI bridge for MediaProjection-based capture.
+// Must be called from a thread with a valid JNI environment (e.g. the UI thread).
+// Parameters are void* to avoid requiring <jni.h> in the public header:
+//   jni_env  — pointer to JNIEnv*
+//   activity — pointer to the host Activity (jobject)
+void android_init(void *jni_env, void *activity);
+#endif
+
 class CaptureError : public std::runtime_error {
 public:
   using std::runtime_error::runtime_error;

@@ -79,6 +79,7 @@ if target == 'android':
     # Cross-compile with NDK: scons target=android CXX=/path/to/ndk-clang++
     sources += [
         'src/platform/android/android_backend.cpp',
+        'src/platform/android/jni_bridge.cpp',
     ]
 
 elif platform == 'darwin':

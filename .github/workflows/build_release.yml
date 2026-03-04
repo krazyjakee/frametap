@@ -49,6 +49,7 @@ jobs:
             artifact-suffix: android-arm64
             lib-name: libframetap.a
             skip-gui: true
+            build-apk: true
 
     steps:
       - name: Checkout repository
@@ -132,6 +133,20 @@ jobs:
         if: ${{ !matrix.skip-gui }}
         run: scons gui ${{ matrix.platform == 'windows' && 'crt=static' || '' }} ${{ matrix.macos-arch && format('macos_arch={0} universal_gui=1', matrix.macos-arch) || '' }}
 
+      # --- Build Android GUI APK ---
+      - name: Set up Gradle
+        if: ${{ matrix.build-apk }}
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build Android GUI APK
+        if: ${{ matrix.build-apk }}
+        run: |
+          cd android
+          gradle wrapper
+          ./gradlew assembleRelease
+          cp app/build/outputs/apk/release/frametap-gui.apk \
+            ../frametap-gui-android-arm64.apk
+
       # --- Ad-hoc codesign macOS binaries so Gatekeeper doesn't block them ---
       - name: Codesign macOS binaries
         if: matrix.platform == 'macos'
@@ -206,6 +221,13 @@ jobs:
           name: frametap-gui-${{ matrix.artifact-suffix }}
           path: pkg-gui/
 
+      - name: Upload Android GUI APK
+        if: ${{ matrix.build-apk }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: frametap-gui-android-arm64
+          path: frametap-gui-android-arm64.apk
+
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
@@ -233,11 +255,13 @@ jobs:
             zip -r ../../frametap-gui-$suffix.zip .
             cd ../..
           done
+          # Android GUI APK
+          cp artifacts/frametap-gui-android-arm64/frametap-gui-android-arm64.apk .
           cp artifacts/frametap-deb/*.deb .
 
       - name: Generate checksums
         run: |
-          sha256sum frametap-*.zip frametap_*.deb > checksums-sha256.txt
+          sha256sum frametap-*.zip frametap-*.apk frametap_*.deb > checksums-sha256.txt
           cat checksums-sha256.txt
 
       - name: Create Release
@@ -258,6 +282,7 @@ jobs:
             frametap-gui-windows.zip
             frametap-gui-macos-arm64.zip
             frametap-gui-macos-x86_64.zip
+            frametap-gui-android-arm64.apk
             frametap_*.deb
             checksums-sha256.txt
           name: frametap-${{ github.ref_name }}

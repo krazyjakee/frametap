@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <application
+        android:label="Frametap"
+        android:icon="@android:drawable/ic_menu_camera"
+        android:theme="@style/AppTheme">
+
+        <!-- Main GUI Activity -->
+        <activity
+            android:name="com.daccord.frametap.gui.FrametapGuiActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Transparent activity for MediaProjection consent dialog -->
+        <activity
+            android:name="com.daccord.frametap.FrametapConsentActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+
+        <!-- Foreground service for MediaProjection (API 29+) -->
+        <service
+            android:name="com.daccord.frametap.FrametapCaptureService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

@@ -1,0 +1,56 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.daccord.frametap.gui'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.daccord.frametap.gui'
+        minSdkVersion 24
+        targetSdkVersion 34
+        versionCode 1
+        versionName '1.0.0'
+
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++20'
+                arguments '-DANDROID_STL=c++_shared'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+
+    sourceSets {
+        main {
+            // Include the existing frametap Java classes alongside the GUI Activity
+            java.srcDirs += '../../../../src/platform/android/java'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = 'frametap-gui.apk'
+        }
+    }
+}

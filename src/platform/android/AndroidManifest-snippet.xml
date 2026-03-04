@@ -1,0 +1,29 @@
+<!--
+    AndroidManifest entries required for frametap MediaProjection support.
+    Consumers must merge these into their application's AndroidManifest.xml.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Required permissions -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+
+    <application>
+
+        <!-- Transparent activity for MediaProjection consent dialog -->
+        <activity
+            android:name="com.daccord.frametap.FrametapConsentActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+
+        <!-- Foreground service for MediaProjection (API 29+) -->
+        <service
+            android:name="com.daccord.frametap.FrametapCaptureService"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
+
+    </application>
+
+</manifest>

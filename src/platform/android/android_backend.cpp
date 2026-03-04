@@ -1,4 +1,5 @@
 #include "android_backend.h"
+#include "jni_bridge.h"
 #include "pixel_convert.h"
 #include "../../util/safe_alloc.h"
 
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <thread>
 
 namespace frametap::internal {
 
@@ -70,13 +72,59 @@ AndroidBackend::AndroidBackend(frametap::Window /*window*/) {
   throw CaptureError("Window capture is not supported on Android");
 }
 
-AndroidBackend::~AndroidBackend() { stop(); }
+AndroidBackend::~AndroidBackend() {
+  stop();
+  if (jni::jni_is_initialized())
+    jni::jni_stop_projection();
+}
 
 // ---------------------------------------------------------------------------
-// Full-screen capture via screencap
+// Full-screen capture — JNI (MediaProjection) with screencap fallback
 // ---------------------------------------------------------------------------
 
 ImageData AndroidBackend::capture_full_screen() {
+  // Prefer MediaProjection via JNI when initialized
+  if (jni::jni_is_initialized()) {
+    if (ensure_projection_active())
+      return capture_via_projection();
+    // If consent was denied or projection failed, fall through to screencap
+  }
+
+  // Legacy path: screencap (works from adb shell / root)
+  return capture_via_screencap();
+}
+
+bool AndroidBackend::ensure_projection_active() {
+  if (jni::jni_is_projection_active())
+    return true;
+
+  // Request user consent (blocks until dialog is dismissed)
+  return jni::jni_request_consent();
+}
+
+ImageData AndroidBackend::capture_via_projection() {
+  // ImageReader may not have a frame ready immediately after projection starts.
+  // Retry a few times with short sleeps.
+  constexpr int max_attempts = 10;
+  constexpr auto retry_delay = std::chrono::milliseconds(50);
+
+  for (int attempt = 0; attempt < max_attempts; ++attempt) {
+    ImageData frame = jni::jni_capture_frame();
+    if (!frame.data.empty())
+      return frame;
+    std::this_thread::sleep_for(retry_delay);
+  }
+
+  throw CaptureError(
+      "MediaProjection: no frame available after " +
+      std::to_string(max_attempts) + " attempts");
+}
+
+// ---------------------------------------------------------------------------
+// Legacy full-screen capture via screencap
+// ---------------------------------------------------------------------------
+
+ImageData AndroidBackend::capture_via_screencap() {
   FILE *fp = popen("screencap", "r");
   if (!fp)
     throw CaptureError(
@@ -297,7 +345,19 @@ std::unique_ptr<Backend> make_backend(Window window) {
 // ---------------------------------------------------------------------------
 
 std::vector<Monitor> enumerate_monitors() {
-  auto [w, h] = parse_wm_size();
+  int w = 0, h = 0;
+
+  // Try JNI display metrics first (works from APK context)
+  if (jni::jni_is_initialized()) {
+    auto [jw, jh] = jni::jni_get_display_size();
+    w = jw;
+    h = jh;
+  }
+
+  // Fall back to wm size (works from adb shell)
+  if (w <= 0 || h <= 0)
+    std::tie(w, h) = parse_wm_size();
+
   if (w <= 0 || h <= 0)
     return {};
 
@@ -325,14 +385,33 @@ std::vector<Window> enumerate_windows() { return {}; }
 PermissionCheck check_platform_permissions() {
   PermissionCheck result;
 
-  // Test if screencap is available and functional
+  // Check JNI / MediaProjection path first
+  if (jni::jni_is_initialized()) {
+    if (jni::jni_is_projection_active()) {
+      result.status = PermissionStatus::ok;
+      result.summary = "MediaProjection active";
+      result.details.push_back(
+          "MediaProjection is initialized and capturing.");
+      return result;
+    }
+    // JNI initialized but projection not yet active — consent not yet granted
+    result.status = PermissionStatus::warning;
+    result.summary = "MediaProjection initialized, consent pending";
+    result.details.push_back(
+        "android_init() was called but MediaProjection consent has not "
+        "been granted yet. Capture will request consent on first use.");
+    return result;
+  }
+
+  // Legacy path: test if screencap is available and functional
   FILE *fp = popen("screencap 2>&1", "r");
   if (!fp) {
     result.status = PermissionStatus::error;
     result.summary = "Cannot execute screencap";
     result.details.push_back(
         "Failed to invoke the 'screencap' command. "
-        "This tool requires an Android environment.");
+        "This tool requires an Android environment. "
+        "Call android_init() to use MediaProjection instead.");
     return result;
   }
 
@@ -349,7 +428,7 @@ PermissionCheck check_platform_permissions() {
         "Ensure you are running as the shell user (adb shell) "
         "or have screen capture permissions.");
     result.details.push_back(
-        "On rooted devices, try: su -c screencap");
+        "For APK usage, call android_init() to use MediaProjection.");
     return result;
   }
 

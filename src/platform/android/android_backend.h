@@ -26,6 +26,9 @@ public:
 
 private:
   ImageData capture_full_screen();
+  ImageData capture_via_screencap();
+  ImageData capture_via_projection();
+  bool ensure_projection_active();
   ImageData crop(const ImageData &full, Rect region);
   void capture_loop(std::stop_token token);
 

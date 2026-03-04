@@ -2,6 +2,11 @@
 
 #include "backend.h"
 
+#ifdef __ANDROID__
+#include "platform/android/jni_bridge.h"
+#include <jni.h>
+#endif
+
 namespace frametap {
 
 // --- Free functions --------------------------------------------------------
@@ -11,6 +16,14 @@ std::vector<Window> get_windows() { return internal::enumerate_windows(); }
 PermissionCheck check_permissions() {
   return internal::check_platform_permissions();
 }
+
+#ifdef __ANDROID__
+void android_init(void *jni_env, void *activity) {
+  auto *env = static_cast<JNIEnv *>(jni_env);
+  auto act = static_cast<jobject>(activity);
+  internal::jni::jni_init(env, act);
+}
+#endif
 
 // --- FrameTap::Impl --------------------------------------------------------
 
