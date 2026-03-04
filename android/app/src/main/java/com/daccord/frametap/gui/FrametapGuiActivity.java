@@ -58,6 +58,16 @@ public class FrametapGuiActivity extends Activity {
         int h = fp.getDisplayHeight();
         textDisplayInfo.setText("Display: " + w + " x " + h);
 
+        // Request notification permission early so it doesn't race with
+        // the MediaProjection consent dialog when capture starts.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2001);
+            }
+        }
+
         btnCapture.setOnClickListener(v -> toggleCapture());
         btnSave.setOnClickListener(v -> saveScreenshot());
     }
@@ -70,25 +80,17 @@ public class FrametapGuiActivity extends Activity {
         }
     }
 
-    private void ensureNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
-                    != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(
-                        new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2001);
-            }
-        }
-    }
-
     private void startCapture() {
-        ensureNotificationPermission();
         textStatus.setText("Status: Requesting consent...");
         btnCapture.setEnabled(false);
 
-        new Thread(() -> {
-            FrametapProjection fp = FrametapProjection.getInstance();
-            fp.requestConsent();
+        // Launch the consent dialog from the UI thread so it is not
+        // blocked by Android 14+ background-activity restrictions.
+        FrametapProjection fp = FrametapProjection.getInstance();
+        fp.requestConsent();
 
+        // Poll for projection readiness on a background thread.
+        new Thread(() -> {
             // Wait for projection to become active (consent is async)
             for (int i = 0; i < 100; i++) {
                 if (fp.isActive()) break;
