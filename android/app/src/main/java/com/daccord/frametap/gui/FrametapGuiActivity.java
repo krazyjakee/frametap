@@ -23,6 +23,8 @@ import java.util.Locale;
 
 public class FrametapGuiActivity extends Activity {
 
+    private static final String TAG = "FrametapGUI";
+
     static {
         System.loadLibrary("frametap");
     }
@@ -51,7 +53,15 @@ public class FrametapGuiActivity extends Activity {
         imagePreview = findViewById(R.id.image_preview);
 
         // Initialize the native frametap JNI bridge
-        nativeInit(this);
+        try {
+            nativeInit(this);
+        } catch (RuntimeException e) {
+            android.util.Log.e(TAG, "Native init failed", e);
+            textStatus.setText("Error: " + e.getMessage());
+            Toast.makeText(this, "Initialization failed: " + e.getMessage(),
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
 
         FrametapProjection fp = FrametapProjection.getInstance();
         int w = fp.getDisplayWidth();
