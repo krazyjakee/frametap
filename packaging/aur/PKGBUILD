@@ -10,7 +10,7 @@ depends=('libx11' 'libxext' 'libxfixes' 'libxinerama' 'pipewire' 'systemd-libs' 
 provides=('frametap')
 conflicts=('frametap')
 source=("https://github.com/krazyjakee/frametap/releases/download/v${pkgver}/frametap-cli-linux.zip")
-sha256sums=('bc88a20aa2eb1d9add54948efb8a3ab9a23895af352cd2e2aa64324f64d8f14b')
+sha256sums=('1abc16463f17d00e01c1957e7d043849f5618ed872d13b16593512272fa2ad09')
 
 package() {
     install -Dm755 frametap "${pkgdir}/usr/bin/frametap"
