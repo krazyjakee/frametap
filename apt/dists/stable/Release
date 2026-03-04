@@ -5,20 +5,20 @@ Codename: stable
 Architectures: amd64
 Components: main
 Description: Frametap APT repository
-Date: Wed, 04 Mar 2026 14:14:37 +0000
+Date: Wed, 04 Mar 2026 17:07:18 +0000
 MD5Sum:
- db73300566fa353f54b277f5546e799f              177 Release
- 4c98b311005d8561dce84233ec09f543             1388 main/binary-amd64/Packages
- c8bc54efce81cb25c604dddcae4bbbf4              602 main/binary-amd64/Packages.gz
+ 88ee2130bdc1ce799f36f2d69e957cfe              177 Release
+ 7541918f4c6357555b5979a6695f153a             1388 main/binary-amd64/Packages
+ b740b5a8dd763e2231a9b37ebb9084ad              596 main/binary-amd64/Packages.gz
 SHA1:
- b3e1da18d105bf07fd6ac60bbe96a2aced4075ed              177 Release
- 4bb6a169b38c621b09a5d303807339c94f113b80             1388 main/binary-amd64/Packages
- aa87512cfce7dc8473a11fcdd47e882d8bf4de8c              602 main/binary-amd64/Packages.gz
+ 06d4dd7009e8d237b00b47bf9aff439949ea2dd2              177 Release
+ d0d919629c921827de4d4cae727e8f2ce57942e9             1388 main/binary-amd64/Packages
+ b3283cdad48cd6a1a086efd3d59fc901870d424c              596 main/binary-amd64/Packages.gz
 SHA256:
- 311b9688dfa09aa7c895c793d923d621f4980c42833569de94f51034eb9c7ff1              177 Release
- ac35f68dcf830631c07816943d0cdb3359606af9df4130cf609dd26a5eb63076             1388 main/binary-amd64/Packages
- afe8acc95045d217345853199b55c193902e82ccf69ab0ee5d37ccbb3a6ecc64              602 main/binary-amd64/Packages.gz
+ d76ba326712ba297c5a1f2fda8d4d3327a2790dba40ef90b2df416eb32941d37              177 Release
+ 353a0b0ec3c65b9d3087263b65e41e67a0029c75de90028c1ddf6470b2e0b837             1388 main/binary-amd64/Packages
+ 35cb7a6c6f0b3a5586a13a0b635fa6a37d20735871d0d5826218a458c353579c              596 main/binary-amd64/Packages.gz
 SHA512:
- a18b4f420793a660552dd539084d265fd38ba70768f728f50d63923da952c2209b538b5fb64a26bb3f4ebba5dfa9ffdbab444cac2fceaf62e867f31b63043758              177 Release
- 8311d063e640775fdeedd3447863c49dce38deda770c93e218ca755a1276573c333062ded5a6d8c52641c9d1aa4fe39f378ff1428cc5e6ff37ca8552490a61c9             1388 main/binary-amd64/Packages
- 5a26bb1127c388252a46969e2c71bdee53965be0baa951d52c8819c3b49d3e33238e6129c1adf2a0316151d065288b6dd037978e089183c9386219a5f7947448              602 main/binary-amd64/Packages.gz
+ a07c8c45d5456c609e1f59cf8ebde81a601f208b8a077a0916c934d1c0535de59326d92c4e6fa9f82f2268ec631a7a8e330c4d1319bc99a3bbe216a626c9114c              177 Release
+ 83b41d1214bf9e96e3896c34bd0b1e43d73851501a986b3dad79e79c9412c4f54d2cea0d514c13e684c0c8df7776127ed6c70869ed894f3d96bab7c793400da2             1388 main/binary-amd64/Packages
+ 8935cec06cb6a0dbd31bff571b34d739c521609526bc4b5ccfbb78d5124758a1a6befb158ed56fa498e787c95b62beaf0bc9579968f58042e5ba593b8d2b08cb              596 main/binary-amd64/Packages.gz
