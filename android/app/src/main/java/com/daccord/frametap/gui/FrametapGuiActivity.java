@@ -29,7 +29,7 @@ public class FrametapGuiActivity extends Activity {
         System.loadLibrary("frametap");
     }
 
-    private static native void nativeInit(Activity activity);
+    private native void nativeInit();
 
     private TextView textDisplayInfo;
     private TextView textStatus;
@@ -54,7 +54,7 @@ public class FrametapGuiActivity extends Activity {
 
         // Initialize the native frametap JNI bridge
         try {
-            nativeInit(this);
+            nativeInit();
         } catch (RuntimeException e) {
             android.util.Log.e(TAG, "Native init failed", e);
             textStatus.setText("Error: " + e.getMessage());
