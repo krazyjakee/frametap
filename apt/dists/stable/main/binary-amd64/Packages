@@ -21,10 +21,10 @@ Architecture: amd64
 Maintainer: Jacob Cattrall <https://github.com/krazyjakee>
 Depends: libx11-6, libxext6, libxfixes3, libxinerama1, libpipewire-0.3-0, libsystemd0, libwayland-client0
 Filename: pool/frametap_0.1.3_amd64.deb
-Size: 66726
-MD5sum: 46c25c86e0318df7d8ed4e7e7696e337
-SHA1: 28f0977140304b27e27eaabc6cd6b7aca164bbe7
-SHA256: d716bb8f3a6e3525a6e858d96f35a36d167ba2ebbc5fcb3eabecaa9ef029e630
+Size: 66730
+MD5sum: 6afc21140987524c0da6153b546966fe
+SHA1: 8a71dcd6b8899db30b90023c46db6bf864369c3c
+SHA256: 4a35055757da44f78fba65a262f06a3a58b9aa9cbcce7849974e4a8082985199
 Section: utils
 Priority: optional
 Homepage: https://github.com/krazyjakee/frametap
