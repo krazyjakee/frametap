@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Path to the frametap project root (relative to this CMakeLists.txt)
-set(FRAMETAP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../")
+set(FRAMETAP_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../..")
 
 add_library(frametap SHARED
     # Core
