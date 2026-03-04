@@ -73,7 +73,6 @@ public final class FrametapProjection {
      */
     public void requestConsent() {
         Intent intent = new Intent(activity, FrametapConsentActivity.class);
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         activity.startActivity(intent);
     }
 

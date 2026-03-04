@@ -3,6 +3,7 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="Frametap"
@@ -23,7 +24,7 @@
         <activity
             android:name="com.daccord.frametap.FrametapConsentActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTop"
             android:excludeFromRecents="true"
             android:exported="false" />
 

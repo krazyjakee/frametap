@@ -7,6 +7,8 @@
     <!-- Required permissions -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- Required on API 33+ (Android 13) for the foreground service notification -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application>
 
@@ -14,7 +16,7 @@
         <activity
             android:name="com.daccord.frametap.FrametapConsentActivity"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTop"
             android:excludeFromRecents="true"
             android:exported="false" />
 
