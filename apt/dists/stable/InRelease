@@ -8,36 +8,36 @@ Codename: stable
 Architectures: amd64
 Components: main
 Description: Frametap APT repository
-Date: Wed, 04 Mar 2026 22:25:32 +0000
+Date: Wed, 04 Mar 2026 22:46:41 +0000
 MD5Sum:
- 9aab41251d427e4f7e971742f9c4be7d              177 Release
- 476901185095391c509d552a9cf60bd5             1388 main/binary-amd64/Packages
- 2af63b7a9e9913ecc210afc17a9f361b              601 main/binary-amd64/Packages.gz
+ 668ed9e23d2b5471ccc0d1c27cf83cac              177 Release
+ da86834e05a3b08afa67e40dc6f13b6c             1388 main/binary-amd64/Packages
+ 46d345e0f370b2f4682feabf4275c6f1              600 main/binary-amd64/Packages.gz
 SHA1:
- 59d783f1c82106f8e86b7eedea38018fe693c60e              177 Release
- 0e19b3d6a06d5fb106cc120f06640ad36a5dc1ff             1388 main/binary-amd64/Packages
- 8f958eb5e50e3057a82b1bac49f4d62f9d857b56              601 main/binary-amd64/Packages.gz
+ cb44292775eba4af204e1ebbbe8227e894a3d0c0              177 Release
+ dd6a7a822846675bc30aa2e76cdec52a94972fa8             1388 main/binary-amd64/Packages
+ db8bc4d3a9de92e5c1884a5bdfb4e4b95518aa78              600 main/binary-amd64/Packages.gz
 SHA256:
- c8573b2da73b9d44173996906856ba31852d07bc39970206789388b1098989f2              177 Release
- 169922d03fe9c8ea3f2bbec819c2edf5deeb398ac21146a10f9d91cd393c689b             1388 main/binary-amd64/Packages
- 76aac4ecf8d896789ba12e678e458d728e263de5096db7b31c62583d40818521              601 main/binary-amd64/Packages.gz
+ f4f74917878660d423f75c97c862f20cce05028e9898565506cab0ad823ca76b              177 Release
+ 21739833b2509dfaa00aac79091fe916cd3a07a379e11498d7bd1736a616796a             1388 main/binary-amd64/Packages
+ d8fc66aad29881be9910cdc2a2e8a43100297a05aea480696835b12348c0d4a3              600 main/binary-amd64/Packages.gz
 SHA512:
- dc59ea33f7f052bca6d12f4b31e3f03358c2f1bfcd34157a7bf13ce4dd59a62ed28b04eac7a2c69494cb6ce49bf8bafc9d3a72e0db35401fc27636bbb4b0c379              177 Release
- 4e3a6cb8ce0bb059ef8fae40b3864b7bf390c400a16a0a71cc98239e1fe62282d985062208c3fbf60c702413f85de7c44e6b914aedce30af3f2657b509f6d15c             1388 main/binary-amd64/Packages
- d78643408eb54c03002019057252f58b172160f5633dfb602cdd64d14a8e5855efcfa3c0379c924e5b0e977e0b3bd92b4165c279ddb48b6822d0cd6232ad00fb              601 main/binary-amd64/Packages.gz
+ 26d8271d0318500e2876d480eff19ceb3100d8d004f23f42244c8c66b78d3812ebc28e64a5cc0e5265805f5750e76e59f873ab407909561d32beddda43fb5125              177 Release
+ 1107231221cba715d72484bfbf7bf30ad6159659235a54fc7a35bf4606795a79fd1b77c7be9df68d7a3a503c7b68a6ac3ba8b56cd28c8204c82513182ec83212             1388 main/binary-amd64/Packages
+ 2f12220c6fb2e2d3c3eef43d985ea852fed34bc93e05f3c3a469055e6a37a9e725c6cd6f10d990cf90c5b2d53dd135ba7af26dbe52ff0c4bf209ee65355748a3              600 main/binary-amd64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iQIzBAEBCgAdFiEEPyHMXQauek17AwzBcsE+05ecaQQFAmmosVwACgkQcsE+05ec
-aQQ9NQ/+LpOtnC72NnOpHhwmxlaKDPp6ccYqimvqv85nCHsuKBUShi38sF9NewzB
-xRXmo7t2Y02zIfgtswK9dTGhvNDiw5ZwEG4hXyUL+sNxQRso2AAFCtwDxKEskU9j
-16nXmMjupz0YPufzBmn5qgu0SzbosWLCeu8lZ4rMHoB3I22mwd99BXzRtA+IN2mX
-Eu760qMzXF94tcBc4sVasiNTkapGupS0wJXEqR2G8RsTCMke8IyiD77/7+FBydO4
-Z2haELECKjZ4BP6ndsxcbVK83VclB2Kh7JWPWkkXqceDofK409T0NIA/eEJTrohZ
-eYbzOS/ICAr6CtmhodhJu7eYpbAdnq9/sx8qOZXmN4aa6ktHljhvmau4N5hB+Sgq
-PoM/4ZPNGC4lBs8Hvn5mkIhL+plKs7hZkIDyPgJkQ7q9ass0rHQlv9xUpLqJTGGt
-7UIAnsrN5QQ5uSsv7f2r1Oic2RIHZG9sd8c+Ci0GEEQK4YBNUfIOGjAV26hFyzdQ
-M+ow8XBaGIZE1lnA1e1QQccYOArZgb2Y3TXCbNvZzIqiVAEK4BEgs7nNrz1zjbVv
-Zea2ZtyJsZCifqIzvdqiPsB78s2zWg7MMkT22xOQbInSfNwVYgtt26v/GzgfrhfB
-GuMNqxO6l1Krgx172tinzXbsFdE3nWdcv0nxh+Cc2jO8N1hGk5I=
-=JYDm
+iQIzBAEBCgAdFiEEPyHMXQauek17AwzBcsE+05ecaQQFAmmotlEACgkQcsE+05ec
+aQTqUQ//UYjK5Rv8+1BP9l5TogF/F5fiLsapqb4JHJeLLDF3zE9/M89d3Ml1SIBR
+xuowPaKvm8ZwTqLOf1MKFI+LLohaywKSGOb6haAgeguAjwwnCUS9wVhFsUJxC9eA
+ecFfasdPVzOEuYLtD120tK6dPNFVkEGLs5z8AboF07uEAHfKDow/IHp65fnYvLwz
+Bh+9qcTDhm8CCl/O/9vu78AGCMfz1l1Zu9RyomagA4c3xjf79FR3P8Q9peOnPR3w
++zWxZaJuv5NnPO9Rprl9/8QEjepJxPvze5VOPhvyFgBNmrURaXpuXpWpFKh99I6S
+NmdOYhDrnLB1r13iUad1rvzOt7NwUCk3B0Ohufabi2TaIsgjQi9MPy0T1rE+pHhF
+z4qqTY1U47UGGS8GBEqvVIsG+p+qHV5rc+fP56PSk+7DQB79xdPRHuISbrz9W16M
+zQIDA1O+gJltwO5RTJ+ykEBIuQXlEoqXSsiIPSrncgiVhjCI+ewNfkgk6qP2Rzx8
+SBf5NqrXsLMelLp+R5chJZ6JPGZtReQsVAV9mdU+LfPJwWV6gp2/eVFZJimztiDO
+SW4foR0TTq8Nohdi4qeqQu3N6OgqaXpdjCu4sAqV32g2nrSJYLh4CTk3Ha1+ldsW
+k9yUM7B/KYgnQCFxYwsDCXjZi4+jWrskCCdAN8qm1xZprLKQels=
+=0N3B
 -----END PGP SIGNATURE-----
