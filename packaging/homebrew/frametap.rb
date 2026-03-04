@@ -7,16 +7,16 @@ class Frametap < Formula
   on_macos do
     if Hardware::CPU.arm?
       url "https://github.com/krazyjakee/frametap/releases/download/v#{version}/frametap-cli-macos-arm64.zip"
-      sha256 "e15e30e65aeb0129676fafcc97003a142d202522683b806766dec7156e3a3af8" # macos-arm64
+      sha256 "b997f09857bea7a9fccb81583a84122df586b0a56e178e1f8d8bb6b5e00c4d79" # macos-arm64
     else
       url "https://github.com/krazyjakee/frametap/releases/download/v#{version}/frametap-cli-macos-x86_64.zip"
-      sha256 "b19ee8850e923bfbe966fd828547b23426dc886e243d5bba6077e86e7ae35356" # macos-x86_64
+      sha256 "b9d9a77b907689acef56fefe2bd44b9114eba968f2cdb74746830b3a8fa736bb" # macos-x86_64
     end
   end
 
   on_linux do
     url "https://github.com/krazyjakee/frametap/releases/download/v#{version}/frametap-cli-linux.zip"
-    sha256 "61d02026a8d10d7a73a5583ef3c02f5e0deef4b32595f57772b5a17a81f47ee1" # linux
+    sha256 "40f7e1e2424bb68e210d7ccd063c8f6490d94845436225eb6daa62f28bf9fc72" # linux
   end
 
   def install

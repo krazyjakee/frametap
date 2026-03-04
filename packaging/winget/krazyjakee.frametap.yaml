@@ -10,7 +10,7 @@ PackageUrl: https://github.com/krazyjakee/frametap
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/krazyjakee/frametap/releases/download/v0.1.3/frametap-cli-windows.zip
-    InstallerSha256: 385e146d92af6a81aa6bf24312717853d866aab437e89f0e5d36bae789db83ee
+    InstallerSha256: 3a4740f5086b11ffb9bf0bbc929f84c32e5ba911df32dad611dc48c24bfca707
     InstallerType: zip
     NestedInstallerType: portable
     NestedInstallerFiles:
