@@ -143,8 +143,8 @@ jobs:
         run: |
           cd android
           gradle wrapper
-          ./gradlew assembleRelease
-          cp app/build/outputs/apk/release/frametap-gui.apk \
+          ./gradlew assembleDebug
+          cp app/build/outputs/apk/debug/frametap-gui.apk \
             ../frametap-gui-android-arm64.apk
 
       # --- Ad-hoc codesign macOS binaries so Gatekeeper doesn't block them ---
