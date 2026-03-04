@@ -15,3 +15,20 @@ Description: Cross-platform screen capture CLI
  Frametap lets you take screenshots of your entire screen, a specific
  monitor, a window, or a custom region from the command line.
 
+Package: frametap
+Version: 0.1.3
+Architecture: amd64
+Maintainer: Jacob Cattrall <https://github.com/krazyjakee>
+Depends: libx11-6, libxext6, libxfixes3, libxinerama1, libpipewire-0.3-0, libsystemd0, libwayland-client0
+Filename: pool/frametap_0.1.3_amd64.deb
+Size: 66726
+MD5sum: 46c25c86e0318df7d8ed4e7e7696e337
+SHA1: 28f0977140304b27e27eaabc6cd6b7aca164bbe7
+SHA256: d716bb8f3a6e3525a6e858d96f35a36d167ba2ebbc5fcb3eabecaa9ef029e630
+Section: utils
+Priority: optional
+Homepage: https://github.com/krazyjakee/frametap
+Description: Cross-platform screen capture CLI
+ Frametap lets you take screenshots of your entire screen, a specific
+ monitor, a window, or a custom region from the command line.
+
