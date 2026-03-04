@@ -6,7 +6,7 @@
   "architecture": {
     "64bit": {
       "url": "https://github.com/krazyjakee/frametap/releases/download/v0.1.3/frametap-cli-windows.zip",
-      "hash": "372695f31898ad20c17e9b131c3e6304578f806d86da993c5201b31f4acaea24"
+      "hash": "d4a22d35a9dd6bed161b87b53828a2b257716ff6010a414b6c527c89d5f60f5b"
     }
   },
   "bin": "frametap.exe",
