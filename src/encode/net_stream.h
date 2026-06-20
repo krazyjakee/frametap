@@ -50,10 +50,12 @@ public:
                          uint64_t pts_90k);
 
   // Declare an AAC audio track. `asc` is the AudioSpecificConfig. Must be
-  // called before write_audio_sample(). If audio capture is unavailable, call
-  // no_audio() instead so the header can be written video-only.
+  // called before write_audio_sample(). `start_delay_90k` offsets audio PTS so
+  // it shares the video's epoch (the first frame), matching when capture began.
+  // If audio capture is unavailable, call no_audio() instead so the header can
+  // be written video-only.
   void set_audio(int sample_rate, int channels, const uint8_t *asc,
-                 size_t asc_len);
+                 size_t asc_len, uint64_t start_delay_90k = 0);
   void write_audio_sample(const uint8_t *data, size_t size);
   void no_audio();
 
@@ -101,6 +103,7 @@ private:
   bool audio_decided_ = false;
   uint64_t video_seen_ = 0;     // frames pushed before audio decision
   uint64_t audio_samples_ = 0;  // running audio pts in samples
+  uint64_t audio_start_delay_90k_ = 0; // audio epoch offset vs first frame
 
   bool started_ = false;
   bool streaming_ = false; // header written, draining queue

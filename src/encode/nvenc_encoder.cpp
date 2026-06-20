@@ -228,7 +228,11 @@ void NvencEncoder::Impl::open(const NvencParams &p, PacketSink s) {
 
   int fps = params.fps > 0 ? params.fps : 60;
   config.gopLength = static_cast<uint32_t>(fps) * 2u; // 2s GOP
-  config.frameIntervalP = 1;                          // no B-frames
+  // No B-frames + low-latency tuning (no lookahead) means exactly one output
+  // packet per input frame, which is what lets us use a single bitstream
+  // buffer and drain it right after each encode(). If B-frames or lookahead
+  // are ever enabled, encode() must switch to a ring of bitstream buffers.
+  config.frameIntervalP = 1;
   apply_rate_control(params.bitrate_kbps);
 
   // Repeat SPS/PPS on every IDR so the elementary stream is self-contained

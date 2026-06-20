@@ -2,10 +2,11 @@
 //
 //   scons record
 //   ./examples/record_example --seconds 8 --codec h264 --bitrate 20000
-//   mpv recording.h264        # or: ffplay recording.h264
+//   mpv ~/Videos/Screencasts/frametap-*.mp4   # or: ffplay <file>
 //
 // Captures the primary monitor (or --monitor <id>), encodes each frame on the
-// GPU via NVENC, and writes a playable Annex-B elementary stream.
+// GPU via NVENC, muxes video + audio, and writes a directly-playable .mp4
+// (or streams it over the network with --stream).
 
 #include <frametap/frametap.h>
 #include <frametap/recording.h>

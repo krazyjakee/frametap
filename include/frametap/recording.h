@@ -14,7 +14,8 @@
 // controller nudges the encoder bitrate at runtime so a chosen target --
 // frames-per-second or visual quality -- is held under load.
 //
-// Only compiled into the `scons record` target; the core library is unchanged.
+// Compiled into the `record` example and, when the NVENC headers are present,
+// the CLI (--record) and GUI; the core library is unchanged.
 
 namespace frametap {
 
@@ -64,7 +65,7 @@ struct StreamConfig {
 std::string default_recording_dir();
 
 // A timestamped output path inside default_recording_dir() for the codec,
-// e.g. ".../frametap-20260620-143052.h264".
+// e.g. ".../frametap-20260620-143052.mp4" (both codecs use an .mp4 container).
 std::string default_recording_path(Codec codec);
 
 struct EncoderConfig {

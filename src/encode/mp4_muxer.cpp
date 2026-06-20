@@ -19,6 +19,10 @@ void put_u32(Bytes &v, uint32_t x) {
   v.push_back(static_cast<uint8_t>(x >> 8));
   v.push_back(static_cast<uint8_t>(x));
 }
+void put_u64(Bytes &v, uint64_t x) {
+  for (int i = 7; i >= 0; --i)
+    v.push_back(static_cast<uint8_t>(x >> (i * 8)));
+}
 void put_bytes(Bytes &v, const uint8_t *d, size_t n) { v.insert(v.end(), d, d + n); }
 void put_fourcc(Bytes &v, const char *s) { v.insert(v.end(), s, s + 4); }
 
@@ -271,13 +275,15 @@ void Mp4Muxer::write_access_unit(const uint8_t *data, size_t size,
 }
 
 void Mp4Muxer::set_audio(int sample_rate, int channels, const uint8_t *asc,
-                         size_t asc_len, int samples_per_frame) {
+                         size_t asc_len, int samples_per_frame,
+                         uint64_t start_delay_90k) {
   if (finalized_)
     return;
   has_audio_ = true;
   audio_rate_ = sample_rate > 0 ? sample_rate : 48000;
   audio_channels_ = channels > 0 ? channels : 2;
   audio_frame_samples_ = samples_per_frame > 0 ? samples_per_frame : 1024;
+  audio_start_delay_90k_ = start_delay_90k;
   audio_asc_.assign(asc, asc + asc_len);
 }
 
@@ -337,10 +343,44 @@ void Mp4Muxer::finalize() {
     duration += d;
   }
 
+  // Audio track timing (in the audio media timescale and the 90 kHz movie
+  // timescale). The empty-edit delay pushes audio presentation to match when
+  // capture actually started relative to the first video frame.
+  const uint32_t audio_n = static_cast<uint32_t>(audio_sample_sizes_.size());
+  const uint32_t audio_delta = static_cast<uint32_t>(audio_frame_samples_);
+  const uint32_t audio_media_dur = audio_n * audio_delta; // audio timescale
+  const uint32_t audio_movie_dur = static_cast<uint32_t>(
+      static_cast<uint64_t>(audio_n) * audio_delta * timescale / audio_rate_);
+  const uint32_t audio_track_dur =
+      audio_movie_dur + static_cast<uint32_t>(audio_start_delay_90k_);
+
+  // Movie duration is the longest track in the movie timescale.
+  uint32_t movie_duration = duration;
+  if (with_audio && audio_track_dur > movie_duration)
+    movie_duration = audio_track_dur;
+
   Bytes config = hevc_ ? build_hvcc(vps_, sps_, pps_) : build_avcc(sps_, pps_);
 
   Bytes m;
   size_t moov = box_begin(m, "moov");
+
+  // Single-chunk offset table: stco (32-bit) when the offset fits, else co64
+  // (64-bit) so recordings past 4 GB still reference their samples correctly.
+  auto put_chunk_offset_box = [&](uint64_t offset) {
+    if (offset <= 0xFFFFFFFFull) {
+      size_t b = box_begin(m, "stco");
+      put_full_box_header(m, 0, 0);
+      put_u32(m, 1); // entry_count
+      put_u32(m, static_cast<uint32_t>(offset));
+      box_end(m, b);
+    } else {
+      size_t b = box_begin(m, "co64");
+      put_full_box_header(m, 0, 0);
+      put_u32(m, 1); // entry_count
+      put_u64(m, offset);
+      box_end(m, b);
+    }
+  };
 
   // mvhd
   {
@@ -349,7 +389,7 @@ void Mp4Muxer::finalize() {
     put_u32(m, 0); // creation
     put_u32(m, 0); // modification
     put_u32(m, timescale);
-    put_u32(m, duration);
+    put_u32(m, movie_duration);
     put_u32(m, 0x00010000); // rate 1.0
     put_u16(m, 0x0100);     // volume 1.0
     put_u16(m, 0);          // reserved
@@ -508,14 +548,8 @@ void Mp4Muxer::finalize() {
               put_u32(m, s.size);
             box_end(m, b);
           }
-          // stco
-          {
-            size_t b = box_begin(m, "stco");
-            put_full_box_header(m, 0, 0);
-            put_u32(m, 1); // entry_count
-            put_u32(m, static_cast<uint32_t>(chunk_offset));
-            box_end(m, b);
-          }
+          // stco / co64
+          put_chunk_offset_box(chunk_offset);
           box_end(m, stbl);
         }
         box_end(m, minf);
@@ -527,11 +561,9 @@ void Mp4Muxer::finalize() {
 
   // Audio trak (AAC / mp4a)
   if (with_audio) {
-    const uint32_t an = static_cast<uint32_t>(audio_sample_sizes_.size());
-    const uint32_t adelta = static_cast<uint32_t>(audio_frame_samples_);
-    const uint32_t aduration = an * adelta; // in audio timescale
-    const uint32_t amovie_dur = static_cast<uint32_t>(
-        static_cast<uint64_t>(an) * adelta * timescale / audio_rate_);
+    const uint32_t an = audio_n;
+    const uint32_t adelta = audio_delta;
+    const uint32_t aduration = audio_media_dur; // in audio timescale
 
     size_t trak = box_begin(m, "trak");
     {
@@ -541,7 +573,7 @@ void Mp4Muxer::finalize() {
       put_u32(m, 0);
       put_u32(m, 2); // track_id
       put_u32(m, 0);
-      put_u32(m, amovie_dur);
+      put_u32(m, audio_track_dur); // movie timescale, includes empty edit
       put_u32(m, 0);
       put_u32(m, 0);
       put_u16(m, 0);      // layer
@@ -552,6 +584,26 @@ void Mp4Muxer::finalize() {
       put_u32(m, 0); // width
       put_u32(m, 0); // height
       box_end(m, b);
+    }
+    // edts/elst: delay audio presentation with an empty edit so it lines up
+    // with the video (capture didn't necessarily start audio at frame 0).
+    if (audio_start_delay_90k_ > 0) {
+      size_t edts = box_begin(m, "edts");
+      size_t b = box_begin(m, "elst");
+      put_full_box_header(m, 0, 0);
+      put_u32(m, 2); // entry_count: empty edit, then the media
+      // Empty edit: media_time = -1, lasts the delay (movie timescale).
+      put_u32(m, static_cast<uint32_t>(audio_start_delay_90k_));
+      put_u32(m, 0xFFFFFFFF);
+      put_u16(m, 1); // media_rate_integer 1.0
+      put_u16(m, 0); // media_rate_fraction
+      // The audio media itself, played from its start.
+      put_u32(m, audio_movie_dur);
+      put_u32(m, 0);
+      put_u16(m, 1);
+      put_u16(m, 0);
+      box_end(m, b);
+      box_end(m, edts);
     }
     {
       size_t mdia = box_begin(m, "mdia");
@@ -649,13 +701,7 @@ void Mp4Muxer::finalize() {
               put_u32(m, sz);
             box_end(m, b);
           }
-          {
-            size_t b = box_begin(m, "stco");
-            put_full_box_header(m, 0, 0);
-            put_u32(m, 1);
-            put_u32(m, static_cast<uint32_t>(audio_chunk_offset));
-            box_end(m, b);
-          }
+          put_chunk_offset_box(audio_chunk_offset);
           box_end(m, stbl);
         }
         box_end(m, minf);

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <random>
 
 namespace frametap::enc {
 namespace {
@@ -121,8 +122,9 @@ bool RtmpSink::handshake(std::string &err) {
   uint8_t c0c1[1 + 1536];
   c0c1[0] = 0x03; // RTMP version
   std::memset(c0c1 + 1, 0, 8); // time + zero
+  static std::mt19937 rng(std::random_device{}());
   for (int i = 9; i < 1 + 1536; ++i)
-    c0c1[i] = static_cast<uint8_t>(std::rand() & 0xFF);
+    c0c1[i] = static_cast<uint8_t>(rng() & 0xFF);
   if (!send_all(c0c1, sizeof(c0c1))) {
     err = "rtmp: handshake send failed";
     return false;
@@ -276,15 +278,24 @@ bool RtmpSink::read_until_result(double want_txn, double *out_number,
     if (type != 0x14) // not an AMF0 command
       continue;
 
+    // Parse the AMF0 command: string command name, then a number transaction
+    // id. Every read is bounds-checked so a short or malformed message is
+    // skipped rather than read out of bounds.
     size_t pos = 0;
-    if (pos >= msg.size() || msg[pos] != 0x02)
+    if (pos >= msg.size() || msg[pos] != 0x02) // command name is an AMF string
       continue;
     pos++;
+    if (pos + 2 > msg.size())
+      continue;
     size_t nlen = (msg[pos] << 8) | msg[pos + 1];
     pos += 2;
+    if (pos + nlen > msg.size())
+      continue;
     std::string name(reinterpret_cast<char *>(msg.data() + pos), nlen);
     pos += nlen;
-    if (pos >= msg.size() || msg[pos] != 0x00)
+    if (pos >= msg.size() || msg[pos] != 0x00) // transaction id is a number
+      continue;
+    if (pos + 9 > msg.size())
       continue;
     double txn = read_be_double(msg.data() + pos + 1);
     pos += 9;
@@ -296,7 +307,7 @@ bool RtmpSink::read_until_result(double want_txn, double *out_number,
     if (name == "_result" && txn == want_txn) {
       if (out_number) {
         amf_skip(msg, pos); // command object / null
-        if (pos < msg.size() && msg[pos] == 0x00)
+        if (pos + 9 <= msg.size() && msg[pos] == 0x00)
           *out_number = read_be_double(msg.data() + pos + 1);
       }
       return true;

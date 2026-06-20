@@ -38,10 +38,13 @@ public:
 
   // Enable an AAC audio track. `asc` is the AudioSpecificConfig for esds.
   // Call once before write_audio_sample(); samples_per_frame is the AAC frame
-  // size (1024). Audio samples are buffered in memory and appended to mdat on
-  // close.
+  // size (1024). `start_delay_90k` is how long after the first video frame the
+  // first audio sample was captured; it becomes an empty edit (edts/elst) so
+  // the audio is presented at the right offset rather than from t=0. Audio
+  // samples are buffered in memory and appended to mdat on close.
   void set_audio(int sample_rate, int channels, const uint8_t *asc,
-                 size_t asc_len, int samples_per_frame);
+                 size_t asc_len, int samples_per_frame,
+                 uint64_t start_delay_90k = 0);
   void write_audio_sample(const uint8_t *data, size_t size);
 
   // Finalize: patch the mdat size and write moov. Safe to call multiple times.
@@ -81,6 +84,7 @@ private:
   int audio_rate_ = 48000;
   int audio_channels_ = 2;
   int audio_frame_samples_ = 1024;
+  uint64_t audio_start_delay_90k_ = 0; // empty-edit offset for the audio track
   std::vector<uint8_t> audio_asc_;
   std::vector<uint8_t> audio_data_;        // concatenated AAC frames
   std::vector<uint32_t> audio_sample_sizes_;

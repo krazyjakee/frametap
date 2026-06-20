@@ -10,6 +10,7 @@
 #include <cstdio>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <ctime>
@@ -161,10 +162,10 @@ struct VideoRecorder::Impl {
   int height = 0;
   bool finished = false;
 
-  // Wall-clock presentation time of the current frame (90 kHz, first frame =
-  // 0), so the muxer can tag real per-frame durations and keep A/V in sync.
-  std::chrono::steady_clock::time_point start_tp;
-  bool have_start = false;
+  // Shared 90 kHz epoch: steady_clock ns of the first video frame, set once by
+  // the capture thread (before audio starts) and read by the audio thread so
+  // the two tracks share a presentation timeline. -1 until the first frame.
+  std::atomic<int64_t> start_ns{-1};
   uint64_t cur_pts_90k = 0;
 
   // submit() runs on the FrameTap capture thread, so a thrown encoder error
@@ -237,10 +238,27 @@ struct VideoRecorder::Impl {
     }
   }
 
+  // 90 kHz delay between the first video frame and now, used to offset the
+  // audio track so it lines up with the video. 0 if the epoch isn't set yet.
+  uint64_t audio_delay_90k() const {
+    const int64_t s = start_ns.load(std::memory_order_acquire);
+    if (s < 0)
+      return 0;
+    const auto now = std::chrono::steady_clock::now();
+    const int64_t now_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            now.time_since_epoch())
+            .count();
+    return now_ns > s ? static_cast<uint64_t>(
+                            static_cast<double>(now_ns - s) * 90000.0 / 1e9)
+                      : 0;
+  }
+
   // Runs on the PipeWire capture thread.
   void on_pcm(const float *pcm, uint32_t frames) {
     try {
       if (!audio_inited) {
+        const uint64_t delay = audio_delay_90k();
         aac.open(audio.rate(), audio.channels(), 160000,
                  [this](const uint8_t *data, size_t size) {
                    if (save_file)
@@ -250,10 +268,10 @@ struct VideoRecorder::Impl {
                  });
         if (save_file)
           muxer.set_audio(aac.sample_rate(), aac.channels(), aac.asc().data(),
-                          aac.asc().size(), 1024);
+                          aac.asc().size(), 1024, delay);
         if (stream)
           stream->set_audio(aac.sample_rate(), aac.channels(),
-                            aac.asc().data(), aac.asc().size());
+                            aac.asc().data(), aac.asc().size(), delay);
         audio_inited = true;
       }
       aac.encode(pcm, frames);
@@ -283,6 +301,17 @@ struct VideoRecorder::Impl {
     const int w = static_cast<int>(img.width);
     const int h = static_cast<int>(img.height);
 
+    // Anchor the shared 90 kHz epoch on the first frame *before* lazy_open()
+    // starts audio capture, so the audio thread sees a valid start_ns.
+    const auto now = std::chrono::steady_clock::now();
+    const int64_t now_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            now.time_since_epoch())
+            .count();
+    int64_t expected = -1;
+    start_ns.compare_exchange_strong(expected, now_ns,
+                                     std::memory_order_acq_rel);
+
     // First frame fixes the encode resolution.
     if (!encoder.is_open())
       lazy_open(w, h);
@@ -290,13 +319,9 @@ struct VideoRecorder::Impl {
       return; // resolution change mid-stream not handled in this slice
 
     // Presentation time of this frame relative to the first one.
-    const auto now = std::chrono::steady_clock::now();
-    if (!have_start) {
-      start_tp = now;
-      have_start = true;
-    }
-    cur_pts_90k = static_cast<uint64_t>(
-        std::chrono::duration<double>(now - start_tp).count() * 90000.0);
+    const int64_t s = start_ns.load(std::memory_order_acquire);
+    cur_pts_90k =
+        static_cast<uint64_t>(static_cast<double>(now_ns - s) * 90000.0 / 1e9);
 
     ++stats.frames_in;
 

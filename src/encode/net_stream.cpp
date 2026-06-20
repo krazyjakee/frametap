@@ -158,7 +158,8 @@ void NetworkStreamer::write_access_unit(const uint8_t *data, size_t size,
 }
 
 void NetworkStreamer::set_audio(int sample_rate, int channels,
-                                const uint8_t *asc, size_t asc_len) {
+                                const uint8_t *asc, size_t asc_len,
+                                uint64_t start_delay_90k) {
   if (!started_)
     return;
   std::lock_guard<std::mutex> lk(m_);
@@ -166,6 +167,7 @@ void NetworkStreamer::set_audio(int sample_rate, int channels,
     return;
   audio_rate_ = sample_rate > 0 ? sample_rate : 48000;
   audio_channels_ = channels > 0 ? channels : 2;
+  audio_start_delay_90k_ = start_delay_90k;
   asc_.assign(asc, asc + asc_len);
   has_audio_ = true;
   audio_decided_ = true;
@@ -193,7 +195,8 @@ void NetworkStreamer::write_audio_sample(const uint8_t *data, size_t size) {
     q_.pop_front();
   Packet p;
   p.audio = true;
-  p.pts = audio_samples_ * 90000 / static_cast<uint64_t>(audio_rate_);
+  p.pts = audio_start_delay_90k_ +
+          audio_samples_ * 90000 / static_cast<uint64_t>(audio_rate_);
   audio_samples_ += kAacFrameSamples;
   p.data.assign(data, data + size);
   q_.push_back(std::move(p));

@@ -561,6 +561,7 @@ if build_tests:
     test_sources = Glob('tests/test_*.cpp') + [
         test_env.Object('tests/obj/ts_muxer', 'src/encode/ts_muxer.cpp'),
         test_env.Object('tests/obj/nal_util', 'src/encode/nal_util.cpp'),
+        test_env.Object('tests/obj/mp4_muxer', 'src/encode/mp4_muxer.cpp'),
     ]
     test_runner = test_env.Program('tests/test_runner', test_sources)
     Depends(test_runner, lib)
