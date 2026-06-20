@@ -1,0 +1,197 @@
+// Hardware screen recorder demo (Linux / NVIDIA NVENC).
+//
+//   scons record
+//   ./examples/record_example --seconds 8 --codec h264 --bitrate 20000
+//   mpv recording.h264        # or: ffplay recording.h264
+//
+// Captures the primary monitor (or --monitor <id>), encodes each frame on the
+// GPU via NVENC, and writes a playable Annex-B elementary stream.
+
+#include <frametap/frametap.h>
+#include <frametap/recording.h>
+
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <string>
+#include <thread>
+
+namespace {
+
+struct Options {
+  frametap::Codec codec = frametap::Codec::h264;
+  int bitrate_kbps = 20000;
+  int fps = 60;
+  int seconds = 8;
+  int monitor_id = -1;
+  frametap::AdaptPriority priority = frametap::AdaptPriority::fps;
+  std::string output;
+  bool help = false;
+  std::string error;
+};
+
+void usage(const char *prog) {
+  std::printf(
+      "Usage: %s [options]\n"
+      "\n"
+      "  --codec h264|hevc        Video codec (default: h264)\n"
+      "  --bitrate <kbps>         Starting bitrate (default: 20000)\n"
+      "  --fps <n>                Target fps for pacing/adaptation (default: 60)\n"
+      "  --seconds <n>            Capture duration (default: 8)\n"
+      "  --monitor <id>           Monitor to capture (default: primary)\n"
+      "  --priority fps|quality|none  Adaptation target (default: fps)\n"
+      "  -o, --output <file>      Output file (default: recording.h264/.h265)\n"
+      "  -h, --help               Show this help\n",
+      prog);
+}
+
+Options parse(int argc, char **argv) {
+  Options o;
+  auto need = [&](int &i) -> const char * {
+    if (i + 1 >= argc) {
+      o.error = std::string(argv[i]) + " requires an argument";
+      return nullptr;
+    }
+    return argv[++i];
+  };
+  for (int i = 1; i < argc; ++i) {
+    std::string a = argv[i];
+    if (a == "-h" || a == "--help") {
+      o.help = true;
+    } else if (a == "--codec") {
+      const char *v = need(i);
+      if (!v)
+        break;
+      if (std::strcmp(v, "h264") == 0)
+        o.codec = frametap::Codec::h264;
+      else if (std::strcmp(v, "hevc") == 0)
+        o.codec = frametap::Codec::hevc;
+      else
+        o.error = "invalid --codec (expected h264 or hevc)";
+    } else if (a == "--bitrate") {
+      const char *v = need(i);
+      if (v)
+        o.bitrate_kbps = std::atoi(v);
+    } else if (a == "--fps") {
+      const char *v = need(i);
+      if (v)
+        o.fps = std::atoi(v);
+    } else if (a == "--seconds") {
+      const char *v = need(i);
+      if (v)
+        o.seconds = std::atoi(v);
+    } else if (a == "--monitor") {
+      const char *v = need(i);
+      if (v)
+        o.monitor_id = std::atoi(v);
+    } else if (a == "--priority") {
+      const char *v = need(i);
+      if (!v)
+        break;
+      if (std::strcmp(v, "fps") == 0)
+        o.priority = frametap::AdaptPriority::fps;
+      else if (std::strcmp(v, "quality") == 0)
+        o.priority = frametap::AdaptPriority::quality;
+      else if (std::strcmp(v, "none") == 0)
+        o.priority = frametap::AdaptPriority::none;
+      else
+        o.error = "invalid --priority (expected fps, quality, or none)";
+    } else if (a == "-o" || a == "--output") {
+      const char *v = need(i);
+      if (v)
+        o.output = v;
+    } else {
+      o.error = "unknown option '" + a + "'";
+    }
+    if (!o.error.empty())
+      break;
+  }
+  if (o.output.empty())
+    o.output = o.codec == frametap::Codec::hevc ? "recording.h265"
+                                                : "recording.h264";
+  return o;
+}
+
+} // namespace
+
+int main(int argc, char **argv) {
+  Options opt = parse(argc, argv);
+  if (opt.help) {
+    usage(argv[0]);
+    return 0;
+  }
+  if (!opt.error.empty()) {
+    std::fprintf(stderr, "Error: %s\n", opt.error.c_str());
+    usage(argv[0]);
+    return 1;
+  }
+
+  auto perms = frametap::check_permissions();
+  if (perms.status == frametap::PermissionStatus::error) {
+    std::fprintf(stderr, "%s\n", perms.summary.c_str());
+    for (const auto &d : perms.details)
+      std::fprintf(stderr, "  %s\n", d.c_str());
+    return 1;
+  }
+
+  frametap::EncoderConfig cfg;
+  cfg.codec = opt.codec;
+  cfg.fps = opt.fps;
+  cfg.bitrate_kbps = opt.bitrate_kbps;
+  cfg.priority = opt.priority;
+
+  try {
+    frametap::VideoRecorder recorder(opt.output, cfg);
+
+    // Pick the capture target.
+    auto make_tap = [&]() {
+      if (opt.monitor_id >= 0) {
+        for (const auto &m : frametap::get_monitors())
+          if (m.id == opt.monitor_id)
+            return frametap::FrameTap(m);
+        std::fprintf(stderr,
+                     "Monitor %d not found; using primary instead.\n",
+                     opt.monitor_id);
+      }
+      return frametap::FrameTap();
+    };
+
+    frametap::FrameTap tap = make_tap();
+    tap.on_frame(
+        [&recorder](const frametap::Frame &f) { recorder.submit(f); });
+
+    std::printf("Recording %s for %d s (codec=%s, start bitrate=%d kbps, "
+                "priority=%s)...\n",
+                opt.output.c_str(), opt.seconds,
+                opt.codec == frametap::Codec::hevc ? "hevc" : "h264",
+                opt.bitrate_kbps,
+                opt.priority == frametap::AdaptPriority::quality ? "quality"
+                : opt.priority == frametap::AdaptPriority::none   ? "none"
+                                                                  : "fps");
+
+    tap.start_async();
+    std::this_thread::sleep_for(std::chrono::seconds(opt.seconds));
+    tap.stop();
+    recorder.finish();
+
+    auto s = recorder.stats();
+    std::printf("\nDone.\n");
+    std::printf("  frames in/encoded : %llu / %llu\n",
+                static_cast<unsigned long long>(s.frames_in),
+                static_cast<unsigned long long>(s.frames_encoded));
+    std::printf("  bytes written     : %llu (%.1f MB)\n",
+                static_cast<unsigned long long>(s.bytes_written),
+                s.bytes_written / (1024.0 * 1024.0));
+    std::printf("  avg encode time   : %.2f ms/frame\n", s.avg_encode_ms);
+    std::printf("  bitrate (final)   : %d kbps\n", s.current_bitrate_kbps);
+    std::printf("  adaptations       : %d\n", s.adaptations);
+    std::printf("\nPlay it:  mpv %s   (or: ffplay %s)\n", opt.output.c_str(),
+                opt.output.c_str());
+  } catch (const std::exception &e) {
+    std::fprintf(stderr, "Recording failed: %s\n", e.what());
+    return 1;
+  }
+
+  return 0;
+}

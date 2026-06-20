@@ -166,6 +166,45 @@ example = example_env.Program(
 Depends(example, lib)
 Alias('example', example)
 
+# --- Recording demo (Linux + NVIDIA NVENC): `scons record` ---
+# Encodes captured frames on the GPU via NVENC into an Annex-B elementary
+# stream. NVENC/CUDA are loaded at runtime (dlopen), so the only build-time
+# requirement is the NVENC API header from nv-codec-headers:
+#   git clone https://github.com/FFmpeg/nv-codec-headers vendor/nv-codec-headers
+_targets = [t.replace('\\', '/') for t in COMMAND_LINE_TARGETS]
+if 'record' in _targets:
+    if not platform.startswith('linux') or target == 'android':
+        print('The `record` target is currently Linux/NVENC-only.')
+        Exit(1)
+
+    rec_env = env.Clone()
+    rec_env.Prepend(LIBS=['frametap'])
+    rec_env.Append(LIBPATH=['.'])
+    rec_env.Append(LIBS=['dl'])
+
+    _nvh = 'vendor/nv-codec-headers/include'
+    if os.path.isdir(_nvh):
+        rec_env.Append(CPPPATH=[_nvh])
+    else:
+        try:
+            rec_env.ParseConfig('pkg-config --cflags ffnvcodec')
+        except Exception:
+            print('nv-codec-headers not found. Install it with:\n'
+                  '  git clone https://github.com/FFmpeg/nv-codec-headers '
+                  'vendor/nv-codec-headers')
+            Exit(1)
+
+    record = rec_env.Program(
+        'examples/record_example',
+        [
+            'src/encode/nvenc_encoder.cpp',
+            'src/encode/recorder.cpp',
+            'examples/record_example.cpp',
+        ],
+    )
+    Depends(record, lib)
+    Alias('record', record)
+
 # --- CLI binary (optional: `scons cli`) ---
 cli_env = env.Clone()
 cli_env.Prepend(LIBS=['frametap'])
