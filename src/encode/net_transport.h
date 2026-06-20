@@ -26,10 +26,20 @@ bool parse_url(const std::string &url, ParsedUrl &out);
 class Transport {
 public:
   virtual ~Transport() = default;
-  // Resolve/open the socket. Returns false and fills `err` on failure.
+  // Resolve/open the socket. Returns false and fills `err` on failure. In
+  // listener mode (see SRT url ?mode=listener) this blocks until a peer
+  // connects, so the receive side should call it from a worker thread.
   virtual bool open(const ParsedUrl &url, std::string &err) = 0;
   // Send one datagram/message. Returns false on a fatal transport error.
   virtual bool send(const uint8_t *data, size_t size) = 0;
+  // Receive one datagram/message into `data` (capacity `cap`). Returns the
+  // number of bytes read, 0 on orderly shutdown, or -1 on a fatal error.
+  // Only the receive-capable transports override this; the default rejects.
+  virtual long recv(uint8_t *data, size_t cap) {
+    (void)data;
+    (void)cap;
+    return -1;
+  }
   virtual void close() = 0;
 };
 

@@ -368,6 +368,11 @@ if ('cli' in _targets and platform.startswith('linux')
             cli_env.Object('cli/obj/rtmp_sink', 'src/encode/rtmp_sink.cpp'),
             cli_env.Object('cli/obj/pw_capture', 'src/audio/pw_capture.cpp'),
             cli_env.Object('cli/obj/recorder', 'src/encode/recorder.cpp'),
+            # Receive path (SRT in -> TS demux -> NVDEC -> file/preview).
+            cli_env.Object('cli/obj/ts_demux', 'src/decode/ts_demux.cpp'),
+            cli_env.Object('cli/obj/nvdec_decoder',
+                           'src/decode/nvdec_decoder.cpp'),
+            cli_env.Object('cli/obj/receiver', 'src/decode/receiver.cpp'),
         ] + voaac_objects(cli_env, 'cli/obj/voaac')
 
 cli = cli_env.Program('cli/frametap', cli_sources)
@@ -442,6 +447,11 @@ if build_gui:
                 gui_env.Object('gui/obj/pw_capture',
                                'src/audio/pw_capture.cpp'),
                 gui_env.Object('gui/obj/recorder', 'src/encode/recorder.cpp'),
+                # Receive path (SRT in -> TS demux -> NVDEC -> live preview).
+                gui_env.Object('gui/obj/ts_demux', 'src/decode/ts_demux.cpp'),
+                gui_env.Object('gui/obj/nvdec_decoder',
+                               'src/decode/nvdec_decoder.cpp'),
+                gui_env.Object('gui/obj/receiver', 'src/decode/receiver.cpp'),
             ] + voaac_objects(gui_env, 'gui/obj/voaac')
         else:
             print('GUI: nv-codec-headers not found; building without GPU '
@@ -562,6 +572,7 @@ if build_tests:
         test_env.Object('tests/obj/ts_muxer', 'src/encode/ts_muxer.cpp'),
         test_env.Object('tests/obj/nal_util', 'src/encode/nal_util.cpp'),
         test_env.Object('tests/obj/mp4_muxer', 'src/encode/mp4_muxer.cpp'),
+        test_env.Object('tests/obj/ts_demux', 'src/decode/ts_demux.cpp'),
     ]
     test_runner = test_env.Program('tests/test_runner', test_sources)
     Depends(test_runner, lib)

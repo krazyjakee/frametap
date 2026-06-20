@@ -166,6 +166,21 @@ public:
                         static_cast<int>(size), nullptr) != SRT_ERROR;
   }
 
+  long recv(uint8_t *data, size_t cap) override {
+    if (sock_ == SRT_INVALID_SOCK)
+      return -1;
+    int n = srt_recvmsg2(sock_, reinterpret_cast<char *>(data),
+                         static_cast<int>(cap), nullptr);
+    if (n == SRT_ERROR) {
+      // A closed connection reports SRT_ECONNLOST; treat it as orderly EOF.
+      int sys = 0;
+      if (srt_getlasterror(&sys) == SRT_ECONNLOST)
+        return 0;
+      return -1;
+    }
+    return n;
+  }
+
   void close() override {
     if (sock_ != SRT_INVALID_SOCK) {
       srt_close(sock_);

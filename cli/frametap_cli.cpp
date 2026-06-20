@@ -11,9 +11,11 @@
 #include <vector>
 
 #ifdef FRAMETAP_CLI_RECORDING
+#include <frametap/receiving.h>
 #include <frametap/recording.h>
 
 #include <chrono>
+#include <ctime>
 #include <thread>
 #endif
 
@@ -118,6 +120,12 @@ static void print_usage(const char *prog) {
       "  --url <url>                      Stream destination (per-protocol "
       "default)\n"
       "  --no-file                        Stream only; write no local file\n"
+      "\n"
+      "Receiving (Linux + NVENC builds):\n"
+      "  --receive                        Receive an SRT stream to a file\n"
+      "  --url <url>                      Source URL (default:\n"
+      "                                   srt://0.0.0.0:9000?mode=listener)\n"
+      "  -o, --output <file>              Output .ts file (default: timestamped)\n"
       "\n"
       "Options:\n"
       "  -o, --output <file>              Output file (default: screenshot.bmp,\n"
@@ -332,10 +340,72 @@ static int run_record(const cli::Args &args) {
   }
   return 0;
 }
+
+static std::string default_received_path() {
+  std::time_t t = std::time(nullptr);
+  std::tm tm{};
+  localtime_r(&t, &tm);
+  char buf[64];
+  std::strftime(buf, sizeof(buf), "received-%Y%m%d-%H%M%S.ts", &tm);
+  return buf;
+}
+
+static int run_receive(const cli::Args &args) {
+  frametap::ReceiverConfig cfg;
+  cfg.url = args.stream_url.empty() ? "srt://0.0.0.0:9000?mode=listener"
+                                    : args.stream_url;
+  // The CLI writes the received stream to a directly-playable .ts file; it does
+  // not decode (that path is for the GUI's live preview).
+  cfg.decode = false;
+  cfg.out_path = args.output_set ? args.output : default_received_path();
+
+  try {
+    frametap::StreamReceiver rx(cfg);
+    rx.start();
+
+    std::printf("Receiving from %s -> %s\n", cfg.url.c_str(),
+                cfg.out_path.c_str());
+    std::printf("Waiting for a sender to connect (Ctrl-C to stop)...\n");
+
+    // Wait for a peer (listener mode blocks in the worker until one connects).
+    while (rx.running() && !rx.connected() && rx.error().empty())
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    if (!rx.error().empty()) {
+      std::fprintf(stderr, "Receive error: %s\n", rx.error().c_str());
+      return 1;
+    }
+    if (rx.connected())
+      std::printf("Connected. Receiving until the sender disconnects...\n");
+
+    while (rx.running())
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    rx.stop();
+    auto s = rx.stats();
+    if (!rx.error().empty()) {
+      std::fprintf(stderr, "Receive error: %s\n", rx.error().c_str());
+      return 1;
+    }
+    std::printf("\nDone. %.1f MB received -> %s\n",
+                s.bytes_received / (1024.0 * 1024.0), cfg.out_path.c_str());
+    std::printf("Play it:  mpv %s\n", cfg.out_path.c_str());
+  } catch (const std::exception &e) {
+    std::fprintf(stderr, "Receive failed: %s\n", e.what());
+    return 1;
+  }
+  return 0;
+}
 #else
 static int run_record(const cli::Args &) {
   std::fprintf(stderr,
                "Recording is not available in this build. Rebuild on Linux "
+               "with NVENC headers (vendor/nv-codec-headers) to enable it.\n");
+  return 1;
+}
+static int run_receive(const cli::Args &) {
+  std::fprintf(stderr,
+               "Receiving is not available in this build. Rebuild on Linux "
                "with NVENC headers (vendor/nv-codec-headers) to enable it.\n");
   return 1;
 }
@@ -396,6 +466,9 @@ int main(int argc, char *argv[]) {
       std::printf("  %s\n", d.c_str());
     return perms.status == frametap::PermissionStatus::error ? 1 : 0;
   }
+
+  if (args.receive)
+    return run_receive(args);
 
   if (args.record)
     return run_record(args);

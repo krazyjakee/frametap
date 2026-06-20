@@ -49,6 +49,10 @@ struct Args {
   std::string stream_url;
   bool no_file = false;
   bool output_set = false; // true once -o/--output is given
+
+  // Receiving (the inverse of streaming): pull an SRT stream and write it to a
+  // file. Honored only by FRAMETAP_CLI_RECORDING builds.
+  bool receive = false;
 };
 
 inline bool parse_region(const char *arg, Region &r) {
@@ -164,6 +168,12 @@ inline Args parse_args(int argc, char *argv[]) {
 
     if (arg == "--record") {
       args.record = true;
+      args.action = Action::capture;
+      continue;
+    }
+
+    if (arg == "--receive") {
+      args.receive = true;
       args.action = Action::capture;
       continue;
     }

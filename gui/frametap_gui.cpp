@@ -1,6 +1,7 @@
 #include <frametap/frametap.h>
 #include <frametap/queue.h>
 #ifdef FRAMETAP_GUI_RECORDING
+#include <frametap/receiving.h>
 #include <frametap/recording.h>
 #endif
 
@@ -52,6 +53,12 @@ struct AppState {
   int stream_protocol = 0; // 0=srt, 1=udp, 2=rtmp
   char stream_url[256] = "srt://0.0.0.0:9000?mode=listener";
   bool stream_save_file = true;
+
+  // Network receiving (live preview of an incoming SRT stream). The receiver
+  // worker pushes decoded frames into frame_queue, the same path capture uses.
+  std::unique_ptr<frametap::StreamReceiver> receiver;
+  bool receiving = false;
+  char receive_url[256] = "srt://0.0.0.0:9000?mode=listener";
 #endif
 };
 
@@ -73,6 +80,8 @@ static void refresh_sources(AppState &s) {
     s.windows.clear();
   }
 }
+
+static void stop_capture(AppState &s); // defined below
 
 #ifdef FRAMETAP_GUI_RECORDING
 static frametap::StreamProtocol protocol_from_index(int i) {
@@ -149,12 +158,54 @@ static void stop_recording(AppState &s) {
   s.recorder.reset();
   s.recording = false;
 }
+
+static void stop_receiving(AppState &s) {
+  if (!s.receiver)
+    return;
+  s.receiver->stop();
+  const std::string err = s.receiver->error();
+  const auto st = s.receiver->stats();
+  s.receiver.reset();
+  s.receiving = false;
+  if (!err.empty())
+    s.status = "Receive error: " + err;
+  else
+    s.status = "Receive stopped (" + std::to_string(st.frames_decoded) +
+               " frames)";
+}
+
+static void start_receiving(AppState &s) {
+  // A received stream is its own source; stop any capture/recording first.
+  stop_capture(s);
+  try {
+    frametap::ReceiverConfig cfg;
+    cfg.url = s.receive_url;
+    cfg.decode = true;
+    s.receiver = std::make_unique<frametap::StreamReceiver>(cfg);
+    s.receiver->on_frame([&s](const frametap::ImageData &img) {
+      frametap::Frame f;
+      f.image = img;
+      s.frame_queue.push(std::move(f));
+    });
+    s.receiver->start();
+    s.receiving = true;
+    s.selected_kind = AppState::SourceKind::None;
+    s.selected_index = -1;
+    s.status = std::string("Receiving from ") + s.receive_url +
+               " (waiting for sender)...";
+  } catch (const std::exception &e) {
+    s.status = std::string("Receive start failed: ") + e.what();
+    s.receiver.reset();
+    s.receiving = false;
+  }
+}
 #endif
 
 static void stop_capture(AppState &s) {
 #ifdef FRAMETAP_GUI_RECORDING
   // Recording is bound to the active capture; tearing down the source ends it.
   stop_recording(s);
+  stop_receiving(s);
 #endif
   if (s.tap) {
     s.tap->stop();
@@ -279,6 +330,23 @@ static void draw_sidebar(AppState &s) {
   if (ImGui::Button("Refresh", ImVec2(-1, 0))) {
     refresh_sources(s);
   }
+
+#ifdef FRAMETAP_GUI_RECORDING
+  ImGui::Spacing();
+  ImGui::SeparatorText("Receive");
+  ImGui::SetNextItemWidth(-1);
+  ImGui::InputText("##rxurl", s.receive_url, sizeof(s.receive_url));
+  if (s.receiving) {
+    if (ImGui::Button("Disconnect", ImVec2(-1, 0)))
+      stop_receiving(s);
+    const bool live = s.receiver && s.receiver->connected();
+    ImGui::TextDisabled("%s", live ? "Receiving (connected)"
+                                   : "Waiting for sender...");
+  } else {
+    if (ImGui::Button("Receive Stream", ImVec2(-1, 0)))
+      start_receiving(s);
+  }
+#endif
 
   ImGui::EndChild();
 }
