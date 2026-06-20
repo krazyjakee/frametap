@@ -1,5 +1,8 @@
 #include <frametap/frametap.h>
 #include <frametap/queue.h>
+#ifdef FRAMETAP_GUI_RECORDING
+#include <frametap/recording.h>
+#endif
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -34,6 +37,16 @@ struct AppState {
 
   frametap::ImageData last_frame;
   std::string status;
+
+#ifdef FRAMETAP_GUI_RECORDING
+  // Recording lives entirely on the main thread: submit() is driven from the
+  // frame-queue drain, and start/stop from the UI buttons, so no locking is
+  // needed around the recorder.
+  std::unique_ptr<frametap::VideoRecorder> recorder;
+  bool recording = false;
+  std::string record_path;
+  frametap::Codec record_codec = frametap::Codec::h264;
+#endif
 };
 
 // ---------------------------------------------------------------------------
@@ -55,7 +68,51 @@ static void refresh_sources(AppState &s) {
   }
 }
 
+#ifdef FRAMETAP_GUI_RECORDING
+static void start_recording(AppState &s) {
+  if (!s.tap) {
+    s.status = "Select a source before recording";
+    return;
+  }
+  try {
+    frametap::EncoderConfig cfg;
+    cfg.codec = s.record_codec;
+    s.record_path = frametap::default_recording_path(s.record_codec);
+    s.recorder =
+        std::make_unique<frametap::VideoRecorder>(s.record_path, cfg);
+    s.recording = true;
+    s.status = "Recording to " + s.record_path + "...";
+  } catch (const std::exception &e) {
+    s.status = std::string("Record start failed: ") + e.what();
+    s.recorder.reset();
+    s.recording = false;
+  }
+}
+
+static void stop_recording(AppState &s) {
+  if (!s.recorder)
+    return;
+  try {
+    // finish() rethrows any error raised while encoding (e.g. the encoder
+    // rejecting the frame size), so a mid-recording failure surfaces here.
+    s.recorder->finish();
+    auto st = s.recorder->stats();
+    s.status = "Saved " + s.record_path + " (" +
+               std::to_string(st.frames_encoded) + " frames, " +
+               std::to_string(st.bytes_written / (1024 * 1024)) + " MB)";
+  } catch (const std::exception &e) {
+    s.status = std::string("Recording failed: ") + e.what();
+  }
+  s.recorder.reset();
+  s.recording = false;
+}
+#endif
+
 static void stop_capture(AppState &s) {
+#ifdef FRAMETAP_GUI_RECORDING
+  // Recording is bound to the active capture; tearing down the source ends it.
+  stop_recording(s);
+#endif
   if (s.tap) {
     s.tap->stop();
     s.tap.reset();
@@ -222,6 +279,27 @@ static void draw_preview(AppState &s) {
   if (ImGui::Button("Save PNG")) {
     save_png(s);
   }
+
+#ifdef FRAMETAP_GUI_RECORDING
+  ImGui::SameLine();
+  if (s.recording) {
+    if (ImGui::Button("Stop Recording"))
+      stop_recording(s);
+  } else {
+    ImGui::BeginDisabled(!s.tap);
+    if (ImGui::Button("Record"))
+      start_recording(s);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80);
+    const char *codecs[] = {"H.264", "HEVC"};
+    int ci = s.record_codec == frametap::Codec::hevc ? 1 : 0;
+    if (ImGui::Combo("##codec", &ci, codecs, 2))
+      s.record_codec =
+          ci == 1 ? frametap::Codec::hevc : frametap::Codec::h264;
+  }
+#endif
+
   ImGui::SameLine();
   ImGui::TextWrapped("%s", s.status.c_str());
 
@@ -284,6 +362,12 @@ int main() {
     {
       std::optional<frametap::Frame> frame;
       while (auto f = state.frame_queue.try_pop()) {
+#ifdef FRAMETAP_GUI_RECORDING
+        // Encode every frame (don't drop), unlike the preview which keeps only
+        // the latest.
+        if (state.recorder)
+          state.recorder->submit(*f);
+#endif
         frame = std::move(f);
       }
       if (frame) {

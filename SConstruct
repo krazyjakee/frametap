@@ -245,6 +245,39 @@ if build_gui:
     ]
     gui_sources = ['gui/frametap_gui.cpp', 'vendor/lodepng/lodepng.cpp'] + imgui_sources
 
+    # Optional GPU recording (Linux + NVIDIA NVENC). Mirrors the `record`
+    # target's header detection: when nv-codec-headers is available we compile
+    # the encoder into the GUI and define FRAMETAP_GUI_RECORDING so the Record
+    # button is built. NVENC/CUDA are dlopen'd at runtime. On other platforms
+    # (or without the header) the GUI builds fine, just without recording.
+    if platform.startswith('linux') and target != 'android':
+        _gui_nvh = 'vendor/nv-codec-headers/include'
+        _gui_rec = False
+        if os.path.isdir(_gui_nvh):
+            gui_env.Append(CPPPATH=[_gui_nvh])
+            _gui_rec = True
+        else:
+            try:
+                gui_env.ParseConfig('pkg-config --cflags ffnvcodec')
+                _gui_rec = True
+            except Exception:
+                _gui_rec = False
+        if _gui_rec:
+            gui_env.Append(CPPDEFINES=['FRAMETAP_GUI_RECORDING'])
+            gui_env.Append(LIBS=['dl'])
+            # Compile the encoder to GUI-private objects so they never collide
+            # with the `record` target's src/encode/*.o.
+            gui_sources = gui_sources + [
+                gui_env.Object('gui/obj/nvenc_encoder',
+                               'src/encode/nvenc_encoder.cpp'),
+                gui_env.Object('gui/obj/recorder', 'src/encode/recorder.cpp'),
+            ]
+        else:
+            print('GUI: nv-codec-headers not found; building without GPU '
+                  'recording. To enable it:\n'
+                  '  git clone https://github.com/FFmpeg/nv-codec-headers '
+                  'vendor/nv-codec-headers')
+
     if platform == 'darwin':
         gui_env.Append(LINKFLAGS=['-lobjc'])
         if universal_gui:
