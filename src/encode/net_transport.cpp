@@ -1,10 +1,8 @@
 #include "encode/net_transport.h"
 
-#include <cstring>
+#include "encode/net_compat.h"
 
-#include <netdb.h>
-#include <sys/socket.h>
-#include <unistd.h>
+#include <cstring>
 
 #ifdef FRAMETAP_HAVE_SRT
 #include <srt/srt.h>
@@ -59,6 +57,7 @@ namespace {
 class UdpTransport : public Transport {
 public:
   bool open(const ParsedUrl &url, std::string &err) override {
+    net_global_init();
     std::string host = url.host.empty() ? "127.0.0.1" : url.host;
     char port[16];
     std::snprintf(port, sizeof(port), "%d", url.port);
@@ -73,15 +72,16 @@ public:
     }
     for (addrinfo *ai = res; ai; ai = ai->ai_next) {
       fd_ = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-      if (fd_ < 0)
+      if (fd_ == kInvalidSocket)
         continue;
-      if (::connect(fd_, ai->ai_addr, ai->ai_addrlen) == 0)
+      if (::connect(fd_, ai->ai_addr,
+                    static_cast<int>(ai->ai_addrlen)) == 0)
         break;
-      ::close(fd_);
-      fd_ = -1;
+      close_socket(fd_);
+      fd_ = kInvalidSocket;
     }
     freeaddrinfo(res);
-    if (fd_ < 0) {
+    if (fd_ == kInvalidSocket) {
       err = "udp: could not open socket to " + host + ":" + port;
       return false;
     }
@@ -89,23 +89,22 @@ public:
   }
 
   bool send(const uint8_t *data, size_t size) override {
-    if (fd_ < 0)
+    if (fd_ == kInvalidSocket)
       return false;
-    ssize_t n = ::send(fd_, data, size, 0);
-    return n == static_cast<ssize_t>(size);
+    return sock_send(fd_, data, size) == static_cast<long>(size);
   }
 
   void close() override {
-    if (fd_ >= 0) {
-      ::close(fd_);
-      fd_ = -1;
+    if (fd_ != kInvalidSocket) {
+      close_socket(fd_);
+      fd_ = kInvalidSocket;
     }
   }
 
   ~UdpTransport() override { close(); }
 
 private:
-  int fd_ = -1;
+  socket_t fd_ = kInvalidSocket;
 };
 
 #ifdef FRAMETAP_HAVE_SRT

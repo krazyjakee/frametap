@@ -124,8 +124,41 @@ def voaac_objects(base_env, objdir):
 _srt_install = 'vendor/srt/install'
 
 
+def build_vendored_srt(label):
+    """One-time cmake build of the libsrt submodule into _srt_install."""
+    src = 'vendor/srt'
+    if not os.path.isfile(os.path.join(src, 'CMakeLists.txt')):
+        print('%s: vendor/srt not initialized (run: git submodule update '
+              '--init vendor/srt) -- building without SRT.' % label)
+        return
+    import shutil
+    import subprocess
+    if shutil.which('cmake') is None:
+        print('%s: cmake not found; cannot build vendored libsrt.' % label)
+        return
+    build_dir = os.path.join(src, 'build')
+    prefix = os.path.abspath(_srt_install)
+    print('%s: building vendored libsrt (one-time, ~1 min)...' % label)
+    try:
+        subprocess.check_call([
+            'cmake', '-S', src, '-B', build_dir,
+            '-DENABLE_ENCRYPTION=OFF', '-DENABLE_APPS=OFF',
+            '-DENABLE_SHARED=OFF', '-DENABLE_STATIC=ON',
+            '-DENABLE_CXX_DEPS=OFF', '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
+            '-DCMAKE_INSTALL_PREFIX=' + prefix,
+        ])
+        subprocess.check_call(['cmake', '--build', build_dir,
+                               '--target', 'srt_static', '-j'])
+        subprocess.check_call(['cmake', '--install', build_dir])
+    except Exception as e:
+        print('%s: libsrt build failed (%s); continuing without SRT.'
+              % (label, e))
+
+
 def enable_srt(an_env, label):
     liba = os.path.join(_srt_install, 'lib', 'libsrt.a')
+    if not os.path.isfile(liba):
+        build_vendored_srt(label)
     if os.path.isfile(liba):
         an_env.Append(CPPPATH=[os.path.join(_srt_install, 'include')])
         an_env.Append(LIBPATH=[os.path.join(_srt_install, 'lib')])
@@ -298,10 +331,46 @@ cli_env.Append(LIBPATH=['.'])
 if platform == 'darwin':
     cli_env.Append(LINKFLAGS=['-lobjc'])
 
-cli = cli_env.Program(
-    'cli/frametap',
-    'cli/frametap_cli.cpp',
-)
+cli_sources = ['cli/frametap_cli.cpp']
+
+# Optional GPU recording/streaming in the CLI (Linux + NVENC), mirroring the
+# GUI. Gated on `cli` being requested so a plain `scons`/`scons test` never
+# triggers the one-time libsrt build. NVENC/CUDA are dlopen'd at runtime.
+if ('cli' in _targets and platform.startswith('linux')
+        and target != 'android'):
+    _cli_nvh = 'vendor/nv-codec-headers/include'
+    _cli_rec = False
+    if os.path.isdir(_cli_nvh):
+        cli_env.Append(CPPPATH=[_cli_nvh])
+        _cli_rec = True
+    else:
+        try:
+            cli_env.ParseConfig('pkg-config --cflags ffnvcodec')
+            _cli_rec = True
+        except Exception:
+            _cli_rec = False
+    if _cli_rec:
+        cli_env.Append(CPPDEFINES=['FRAMETAP_CLI_RECORDING'])
+        cli_env.Append(LIBS=['dl'])
+        cli_env.Append(CPPPATH=_voaac_incs)
+        enable_srt(cli_env, 'CLI')
+        cli_sources += [
+            cli_env.Object('cli/obj/nvenc_encoder',
+                           'src/encode/nvenc_encoder.cpp'),
+            cli_env.Object('cli/obj/mp4_muxer', 'src/encode/mp4_muxer.cpp'),
+            cli_env.Object('cli/obj/aac_encoder', 'src/encode/aac_encoder.cpp'),
+            cli_env.Object('cli/obj/net_stream', 'src/encode/net_stream.cpp'),
+            cli_env.Object('cli/obj/ts_muxer', 'src/encode/ts_muxer.cpp'),
+            cli_env.Object('cli/obj/ts_sink', 'src/encode/ts_sink.cpp'),
+            cli_env.Object('cli/obj/net_transport',
+                           'src/encode/net_transport.cpp'),
+            cli_env.Object('cli/obj/nal_util', 'src/encode/nal_util.cpp'),
+            cli_env.Object('cli/obj/rtmp_sink', 'src/encode/rtmp_sink.cpp'),
+            cli_env.Object('cli/obj/pw_capture', 'src/audio/pw_capture.cpp'),
+            cli_env.Object('cli/obj/recorder', 'src/encode/recorder.cpp'),
+        ] + voaac_objects(cli_env, 'cli/obj/voaac')
+
+cli = cli_env.Program('cli/frametap', cli_sources)
 Depends(cli, lib)
 Alias('cli', cli)
 
@@ -487,7 +556,12 @@ if build_tests:
     else:
         test_env.ParseConfig('pkg-config --cflags --libs catch2-with-main')
 
-    test_sources = Glob('tests/test_*.cpp')
+    # Muxer sources under test, compiled to test-private objects so they don't
+    # collide with the record/gui targets' objects.
+    test_sources = Glob('tests/test_*.cpp') + [
+        test_env.Object('tests/obj/ts_muxer', 'src/encode/ts_muxer.cpp'),
+        test_env.Object('tests/obj/nal_util', 'src/encode/nal_util.cpp'),
+    ]
     test_runner = test_env.Program('tests/test_runner', test_sources)
     Depends(test_runner, lib)
     # On Windows the Program target is tests/test_runner.exe, so SCons can't

@@ -1,14 +1,12 @@
 #include "encode/rtmp_sink.h"
 
+#include "encode/net_compat.h"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <map>
-
-#include <netdb.h>
-#include <sys/socket.h>
-#include <unistd.h>
 
 namespace frametap::enc {
 namespace {
@@ -100,7 +98,7 @@ RtmpSink::~RtmpSink() { finish(); }
 bool RtmpSink::send_all(const uint8_t *data, size_t len) {
   size_t off = 0;
   while (off < len) {
-    ssize_t n = ::send(fd_, data + off, len - off, 0);
+    long n = sock_send(fd_, data + off, len - off);
     if (n <= 0)
       return false;
     off += static_cast<size_t>(n);
@@ -111,7 +109,7 @@ bool RtmpSink::send_all(const uint8_t *data, size_t len) {
 bool RtmpSink::recv_all(uint8_t *data, size_t len) {
   size_t off = 0;
   while (off < len) {
-    ssize_t n = ::recv(fd_, data + off, len - off, 0);
+    long n = sock_recv(fd_, data + off, len - off);
     if (n <= 0)
       return false;
     off += static_cast<size_t>(n);
@@ -456,6 +454,7 @@ bool RtmpSink::start(const StreamSinkParams &p, std::string &err) {
   tc_url_ = scheme + authority + "/" + app_;
 
   // TCP connect.
+  net_global_init();
   char port[16];
   std::snprintf(port, sizeof(port), "%d", port_);
   addrinfo hints{};
@@ -468,15 +467,15 @@ bool RtmpSink::start(const StreamSinkParams &p, std::string &err) {
   }
   for (addrinfo *ai = res; ai; ai = ai->ai_next) {
     fd_ = ::socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-    if (fd_ < 0)
+    if (fd_ == kInvalidSocket)
       continue;
-    if (::connect(fd_, ai->ai_addr, ai->ai_addrlen) == 0)
+    if (::connect(fd_, ai->ai_addr, static_cast<int>(ai->ai_addrlen)) == 0)
       break;
-    ::close(fd_);
-    fd_ = -1;
+    close_socket(fd_);
+    fd_ = kInvalidSocket;
   }
   freeaddrinfo(res);
-  if (fd_ < 0) {
+  if (fd_ == kInvalidSocket) {
     err = "rtmp: cannot connect to " + host_ + ":" + port;
     return false;
   }
@@ -499,7 +498,7 @@ bool RtmpSink::start(const StreamSinkParams &p, std::string &err) {
 
 void RtmpSink::write_video(const uint8_t *annexb, size_t size, bool keyframe,
                            uint64_t pts_90k) {
-  if (failed_ || fd_ < 0)
+  if (failed_ || fd_ == kInvalidSocket)
     return;
   vbuf_.clear();
   annexb_to_length_prefixed(annexb, size, params_.hevc, ps_, vbuf_);
@@ -535,7 +534,7 @@ void RtmpSink::write_video(const uint8_t *annexb, size_t size, bool keyframe,
 }
 
 void RtmpSink::write_audio(const uint8_t *aac, size_t size, uint64_t pts_90k) {
-  if (failed_ || fd_ < 0 || !params_.has_audio || size == 0)
+  if (failed_ || fd_ == kInvalidSocket || !params_.has_audio || size == 0)
     return;
   const uint32_t ts = static_cast<uint32_t>(pts_90k / 90);
 
@@ -558,7 +557,7 @@ void RtmpSink::write_audio(const uint8_t *aac, size_t size, uint64_t pts_90k) {
 
 void RtmpSink::finish() {
   // Politely unpublish so the server doesn't log a broken-pipe demux error.
-  if (fd_ >= 0 && published_ && !failed_) {
+  if (fd_ != kInvalidSocket && published_ && !failed_) {
     std::vector<uint8_t> cmd;
     amf_str(cmd, "FCUnpublish");
     amf_num(cmd, 0);
@@ -574,9 +573,9 @@ void RtmpSink::finish() {
     send_message(0x14, 0, 0, 3, cmd.data(), cmd.size());
     published_ = false;
   }
-  if (fd_ >= 0) {
-    ::close(fd_);
-    fd_ = -1;
+  if (fd_ != kInvalidSocket) {
+    close_socket(fd_);
+    fd_ = kInvalidSocket;
   }
 }
 

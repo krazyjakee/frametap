@@ -36,6 +36,19 @@ struct Args {
   uint64_t window_id = 0;
   Region region{};
   std::string error;
+
+  // Recording / streaming (used when `record` is set). Only honored by builds
+  // compiled with FRAMETAP_CLI_RECORDING (Linux + NVENC).
+  bool record = false;
+  int seconds = 8;
+  std::string codec = "h264"; // h264 | hevc
+  int bitrate_kbps = 20000;
+  int fps = 60;
+  bool stream = false;
+  std::string stream_protocol = "srt"; // srt | udp | rtmp
+  std::string stream_url;
+  bool no_file = false;
+  bool output_set = false; // true once -o/--output is given
 };
 
 inline bool parse_region(const char *arg, Region &r) {
@@ -96,6 +109,7 @@ inline Args parse_args(int argc, char *argv[]) {
         return args;
       }
       args.output = argv[i];
+      args.output_set = true;
       continue;
     }
 
@@ -145,6 +159,52 @@ inline Args parse_args(int argc, char *argv[]) {
       }
       args.action = Action::capture;
       args.mode = CaptureMode::region;
+      continue;
+    }
+
+    if (arg == "--record") {
+      args.record = true;
+      args.action = Action::capture;
+      continue;
+    }
+
+    if (arg == "--seconds" || arg == "--codec" || arg == "--bitrate" ||
+        arg == "--fps" || arg == "--stream" || arg == "--url") {
+      if (++i >= argc) {
+        args.error = arg + " requires an argument.";
+        return args;
+      }
+      const std::string val = argv[i];
+      if (arg == "--seconds") {
+        try { args.seconds = std::stoi(val); } catch (...) {
+          args.error = "Invalid --seconds '" + val + "'."; return args; }
+      } else if (arg == "--bitrate") {
+        try { args.bitrate_kbps = std::stoi(val); } catch (...) {
+          args.error = "Invalid --bitrate '" + val + "'."; return args; }
+      } else if (arg == "--fps") {
+        try { args.fps = std::stoi(val); } catch (...) {
+          args.error = "Invalid --fps '" + val + "'."; return args; }
+      } else if (arg == "--codec") {
+        if (val != "h264" && val != "hevc") {
+          args.error = "Invalid --codec '" + val + "' (expected h264 or hevc).";
+          return args;
+        }
+        args.codec = val;
+      } else if (arg == "--stream") {
+        if (val != "srt" && val != "udp" && val != "rtmp") {
+          args.error = "Invalid --stream '" + val + "' (srt, udp, or rtmp).";
+          return args;
+        }
+        args.stream = true;
+        args.stream_protocol = val;
+      } else { // --url
+        args.stream_url = val;
+      }
+      continue;
+    }
+
+    if (arg == "--no-file") {
+      args.no_file = true;
       continue;
     }
 

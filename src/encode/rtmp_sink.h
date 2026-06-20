@@ -1,6 +1,7 @@
 #pragma once
 
 #include "encode/nal_util.h"
+#include "encode/net_compat.h"
 #include "encode/stream_sink.h"
 
 #include <cstdint>
@@ -41,7 +42,7 @@ private:
   void send_video_seq_header();
   void send_metadata();
 
-  int fd_ = -1;
+  socket_t fd_ = kInvalidSocket;
   bool failed_ = false;
   bool seq_sent_ = false;
   bool asc_sent_ = false;

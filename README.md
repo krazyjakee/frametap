@@ -192,11 +192,42 @@ Capture mode:
 
 The CLI saves a 24-bit BMP file named `screenshot.bmp` in the current working directory. The file is overwritten on each run.
 
+### Recording & Streaming (Linux + NVIDIA)
+
+Builds compiled with NVENC support can record H.264/HEVC video and stream it
+over the network. There is **no ffmpeg dependency** — the MP4/MPEG-TS/FLV
+muxers are hand-rolled, AAC audio uses the vendored vo-aacenc, and SRT uses the
+vendored libsrt.
+
+```bash
+# Record 10 seconds of monitor 0 to a timestamped MP4 in ~/Videos/Screencasts
+./frametap --record --seconds 10 --monitor 0
+
+# Record HEVC at a custom bitrate to a chosen file
+./frametap --record --codec hevc --bitrate 30000 -o out.mp4
+
+# Stream MPEG-TS over UDP (view with: ffplay udp://@:1234), no local file
+./frametap --record --stream udp --url udp://127.0.0.1:1234 --no-file
+
+# Push to an RTMP ingest (e.g. nginx-rtmp, Twitch)
+./frametap --record --stream rtmp --url rtmp://host/live/key
+
+# Serve over SRT in listener mode (viewer connects to srt://your-ip:9000)
+./frametap --record --stream srt --url 'srt://0.0.0.0:9000?mode=listener'
+```
+
+Run `./frametap --help` for the full flag list. On a build without NVENC,
+`--record` prints a message explaining how to enable it.
+
 ---
 
 ## Building from Source
 
-If you'd rather build Frametap yourself instead of downloading a release, you'll need C++20 and [SCons](https://scons.org/).
+If you'd rather build Frametap yourself instead of downloading a release, you'll need C++20 and [SCons](https://scons.org/). The GUI and the recording deps live in git submodules, so clone them first:
+
+```bash
+git submodule update --init --recursive
+```
 
 ```bash
 # Build the library
@@ -213,6 +244,22 @@ This produces:
 - `libframetap.a` (or `frametap.lib` on Windows) — static library
 - `cli/frametap` — command-line tool
 - `gui/frametap_gui` — graphical app
+
+### Recording build (Linux + NVIDIA)
+
+Video recording/streaming is compiled into the CLI and GUI when the NVENC
+headers are present, so clone them once:
+
+```bash
+git clone https://github.com/FFmpeg/nv-codec-headers vendor/nv-codec-headers
+```
+
+AAC audio (vendored [vo-aacenc](https://github.com/mstorsjo/vo-aacenc),
+Apache-2.0) compiles automatically. SRT (vendored
+[libsrt](https://github.com/Haivision/srt)) is built once via `cmake` on the
+first `scons cli`/`scons gui`/`scons record` — so `cmake` must be on `PATH` for
+SRT support (UDP and RTMP work without it). The build is encryption-off, so no
+OpenSSL is required. There is no ffmpeg/libav dependency.
 
 ### Dependencies
 

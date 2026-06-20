@@ -37,6 +37,14 @@ scons macos_arch=arm64|x86_64|universal     # macOS arch
 scons crt=static|dynamic                    # Windows CRT linkage
 ```
 
+### Submodules / recording deps
+
+The GUI and recording deps are git submodules — run `git submodule update
+--init --recursive` first. GPU recording also needs the NVENC headers
+(`git clone https://github.com/FFmpeg/nv-codec-headers vendor/nv-codec-headers`).
+On the first `scons record|cli|gui`, the vendored libsrt submodule is built once
+via `cmake` (encryption off, no OpenSSL); UDP/RTMP work without it.
+
 ## Architecture
 
 ### Backend abstraction
@@ -63,9 +71,21 @@ scons crt=static|dynamic                    # Windows CRT linkage
 
 Headers are in `include/frametap/`. The main class is `frametap::FrameTap` with constructors for monitor, window, region, or primary-monitor capture. Key free functions: `get_monitors()`, `get_windows()`, `check_permissions()`.
 
+### Recording & streaming (Linux/NVENC)
+
+`src/encode/` holds the GPU recording pipeline, compiled into the `record`
+example and (when NVENC headers are present) the CLI/GUI. It has **no
+ffmpeg/libav dependency**:
+
+- **NVENC** (`nvenc_encoder.cpp`) encodes RGBA → Annex-B H.264/HEVC; CUDA/NVENC are `dlopen`'d at runtime.
+- **Muxers** are hand-rolled: `mp4_muxer.cpp` (file), `ts_muxer.cpp` (MPEG-TS), and FLV inside `rtmp_sink.cpp`. `nal_util.cpp` converts Annex-B → length-prefixed and builds avcC/hvcC.
+- **AAC** (`aac_encoder.cpp`) wraps vendored vo-aacenc (Apache-2.0).
+- **Streaming** goes through the `StreamSink` interface (`stream_sink.h`): `TsSink` over UDP/SRT (`ts_sink.cpp`, `net_transport.cpp`) and `RtmpSink` over TCP. `NetworkStreamer` (`net_stream.cpp`) owns the worker thread + bounded queue. Sockets are cross-platform via `net_compat.h` (POSIX + Winsock).
+- `VideoRecorder` (`recording.h` / `recorder.cpp`) ties capture frames to the encoder, muxer, and optional stream.
+
 ### Test infrastructure
 
-Catch2 v3 with tags `[unit]` (headless-safe) and `[integration]` (display-required). `tests/helpers.h` provides `has_display()` to skip integration tests in CI.
+Catch2 v3 with tags `[unit]` (headless-safe) and `[integration]` (display-required). `tests/helpers.h` provides `has_display()` to skip integration tests in CI. Muxer logic is covered by `[unit][muxer]` tests in `tests/test_muxer.cpp` (no GPU needed).
 
 ## Code Style
 
