@@ -5,6 +5,13 @@ build/
 .sconsign.dblite
 .sconf_temp/
 
+# Vendored libsrt build output (regenerate with cmake; see SConstruct)
+vendor/srt/build/
+vendor/srt/install/
+
+# Vendored record_example binary
+examples/record_example
+
 # Binaries
 *.out
 *.lib

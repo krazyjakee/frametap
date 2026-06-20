@@ -1,15 +1,25 @@
 #include "encode/aac_encoder.h"
 
-extern "C" {
-#include <libavcodec/avcodec.h>
-#include <libavutil/channel_layout.h>
-#include <libavutil/opt.h>
-#include <libavutil/samplefmt.h>
-}
+#include <common/include/cmnMemory.h>
+#include <common/include/voAAC.h>
 
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace frametap::enc {
+namespace {
+
+int freq_index(int rate) {
+  static const int table[] = {96000, 88200, 64000, 48000, 44100, 32000, 24000,
+                              22050, 16000, 12000, 11025, 8000,  7350};
+  for (int i = 0; i < 13; ++i)
+    if (table[i] == rate)
+      return i;
+  return 3; // default 48 kHz
+}
+
+} // namespace
 
 AacEncoder::~AacEncoder() { close(); }
 
@@ -19,109 +29,118 @@ void AacEncoder::open(int sample_rate, int channels, int bitrate_bps,
   channels_ = channels > 0 ? channels : 2;
   sink_ = std::move(sink);
   flushed_ = false;
-  pts_ = 0;
-
-  const AVCodec *codec = avcodec_find_encoder(AV_CODEC_ID_AAC);
-  if (!codec)
-    throw std::runtime_error("audio: no AAC encoder in libavcodec");
-
-  ctx_ = avcodec_alloc_context3(codec);
-  if (!ctx_)
-    throw std::runtime_error("audio: avcodec_alloc_context3 failed");
-
-  ctx_->sample_fmt = AV_SAMPLE_FMT_FLTP;
-  ctx_->sample_rate = sample_rate_;
-  ctx_->bit_rate = bitrate_bps > 0 ? bitrate_bps : 160000;
-  av_channel_layout_default(&ctx_->ch_layout, channels_);
-  ctx_->time_base = {1, sample_rate_};
-  // Put AudioSpecificConfig in extradata and emit raw (non-ADTS) frames.
-  ctx_->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-
-  if (avcodec_open2(ctx_, codec, nullptr) < 0)
-    throw std::runtime_error("audio: avcodec_open2(aac) failed");
-
-  frame_size_ = ctx_->frame_size > 0 ? ctx_->frame_size : 1024;
-  if (ctx_->extradata && ctx_->extradata_size > 0)
-    asc_.assign(ctx_->extradata, ctx_->extradata + ctx_->extradata_size);
-
-  frame_ = av_frame_alloc();
-  frame_->format = AV_SAMPLE_FMT_FLTP;
-  frame_->nb_samples = frame_size_;
-  frame_->sample_rate = sample_rate_;
-  av_channel_layout_copy(&frame_->ch_layout, &ctx_->ch_layout);
-  if (av_frame_get_buffer(frame_, 0) < 0)
-    throw std::runtime_error("audio: av_frame_get_buffer failed");
-
-  pkt_ = av_packet_alloc();
   buffer_.clear();
+
+  auto *api = new VO_AUDIO_CODECAPI();
+  if (voGetAACEncAPI(api) != VO_ERR_NONE) {
+    delete api;
+    throw std::runtime_error("audio: voGetAACEncAPI failed");
+  }
+
+  auto *mem = new VO_MEM_OPERATOR();
+  mem->Alloc = cmnMemAlloc;
+  mem->Copy = cmnMemCopy;
+  mem->Free = cmnMemFree;
+  mem->Set = cmnMemSet;
+  mem->Check = cmnMemCheck;
+
+  VO_CODEC_INIT_USERDATA ud;
+  ud.memflag = VO_IMF_USERMEMOPERATOR;
+  ud.memData = mem;
+
+  VO_HANDLE handle = nullptr;
+  if (api->Init(&handle, VO_AUDIO_CodingAAC, &ud) != VO_ERR_NONE) {
+    delete api;
+    delete mem;
+    throw std::runtime_error("audio: vo-aacenc Init failed");
+  }
+
+  AACENC_PARAM p{};
+  p.sampleRate = sample_rate_;
+  p.bitRate = bitrate_bps > 0 ? bitrate_bps : 160000;
+  p.nChannels = channels_;
+  p.adtsUsed = 0; // raw AAC; muxers add ADTS / esds themselves
+  if (api->SetParam(handle, VO_PID_AAC_ENCPARAM, &p) != VO_ERR_NONE) {
+    api->Uninit(handle);
+    delete api;
+    delete mem;
+    throw std::runtime_error("audio: vo-aacenc SetParam failed (bad rate or "
+                             "bitrate for channel count)");
+  }
+
+  enc_ = handle;
+  api_ = api;
+  mem_ = mem;
+
+  // Synthesize the 2-byte AAC-LC AudioSpecificConfig.
+  const int fi = freq_index(sample_rate_);
+  asc_.resize(2);
+  asc_[0] = static_cast<uint8_t>((2 << 3) | ((fi >> 1) & 0x7));
+  asc_[1] = static_cast<uint8_t>(((fi & 1) << 7) | ((channels_ & 0xF) << 3));
 }
 
-void AacEncoder::drain() {
-  while (true) {
-    int r = avcodec_receive_packet(ctx_, pkt_);
-    if (r == AVERROR(EAGAIN) || r == AVERROR_EOF)
-      break;
-    if (r < 0)
-      break;
-    if (sink_)
-      sink_(pkt_->data, static_cast<size_t>(pkt_->size));
-    av_packet_unref(pkt_);
-  }
-}
+void AacEncoder::encode_block() {
+  auto *api = static_cast<VO_AUDIO_CODECAPI *>(api_);
+  const size_t block = static_cast<size_t>(frame_size_) * channels_;
 
-void AacEncoder::send_buffered_frame() {
-  if (av_frame_make_writable(frame_) < 0)
-    return;
-  // Deinterleave the first frame_size_ sample-frames into planar float.
-  for (int ch = 0; ch < channels_; ++ch) {
-    auto *dst = reinterpret_cast<float *>(frame_->data[ch]);
-    for (int i = 0; i < frame_size_; ++i)
-      dst[i] = buffer_[static_cast<size_t>(i) * channels_ + ch];
-  }
-  frame_->pts = pts_;
-  pts_ += frame_size_;
+  VO_CODECBUFFER in{};
+  in.Buffer = reinterpret_cast<VO_PBYTE>(buffer_.data());
+  in.Length = block * sizeof(int16_t);
+  api->SetInputData(enc_, &in);
 
-  if (avcodec_send_frame(ctx_, frame_) >= 0)
-    drain();
+  uint8_t outbuf[8192];
+  VO_CODECBUFFER out{};
+  VO_AUDIO_OUTPUTINFO info{};
+  out.Buffer = outbuf;
+  out.Length = sizeof(outbuf);
+  if (api->GetOutputData(enc_, &out, &info) == VO_ERR_NONE && out.Length > 0 &&
+      sink_)
+    sink_(outbuf, out.Length);
 
   buffer_.erase(buffer_.begin(),
-                buffer_.begin() +
-                    static_cast<std::ptrdiff_t>(frame_size_) * channels_);
+                buffer_.begin() + static_cast<std::ptrdiff_t>(block));
 }
 
 void AacEncoder::encode(const float *interleaved, uint32_t frames) {
-  if (!ctx_ || flushed_)
+  if (!enc_ || flushed_)
     return;
-  buffer_.insert(buffer_.end(), interleaved,
-                 interleaved + static_cast<size_t>(frames) * channels_);
+  const size_t n = static_cast<size_t>(frames) * channels_;
+  const size_t old = buffer_.size();
+  buffer_.resize(old + n);
+  for (size_t i = 0; i < n; ++i) {
+    float s = interleaved[i];
+    s = std::min(1.0f, std::max(-1.0f, s));
+    buffer_[old + i] = static_cast<int16_t>(std::lrintf(s * 32767.0f));
+  }
+
   const size_t block = static_cast<size_t>(frame_size_) * channels_;
   while (buffer_.size() >= block)
-    send_buffered_frame();
+    encode_block();
 }
 
 void AacEncoder::flush() {
-  if (!ctx_ || flushed_)
+  if (!enc_ || flushed_)
     return;
   flushed_ = true;
   // Pad a trailing partial frame with silence so the tail isn't dropped.
   const size_t block = static_cast<size_t>(frame_size_) * channels_;
   if (!buffer_.empty()) {
-    buffer_.resize(block, 0.0f);
-    send_buffered_frame();
+    buffer_.resize(block, 0);
+    encode_block();
   }
-  avcodec_send_frame(ctx_, nullptr); // enter draining mode
-  drain();
 }
 
 void AacEncoder::close() {
-  if (ctx_ && !flushed_)
+  if (enc_ && !flushed_)
     flush();
-  if (pkt_)
-    av_packet_free(&pkt_);
-  if (frame_)
-    av_frame_free(&frame_);
-  if (ctx_)
-    avcodec_free_context(&ctx_);
+  auto *api = static_cast<VO_AUDIO_CODECAPI *>(api_);
+  if (api && enc_)
+    api->Uninit(enc_);
+  delete api;
+  delete static_cast<VO_MEM_OPERATOR *>(mem_);
+  api_ = nullptr;
+  mem_ = nullptr;
+  enc_ = nullptr;
 }
 
 } // namespace frametap::enc

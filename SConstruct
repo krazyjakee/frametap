@@ -71,6 +71,75 @@ else:
         san_flags = [f'-fsanitize={sanitize}', '-fno-omit-frame-pointer', '-g']
         env.Append(CXXFLAGS=san_flags, LINKFLAGS=san_flags)
 
+# --- Vendored vo-aacenc (Apache-2.0) AAC-LC encoder ---
+# Compiled straight into the recording targets so there is no ffmpeg/libav
+# dependency for audio. Pure C/C++ (the ARM asm paths are not enabled on x86).
+_voaac_root = 'vendor/vo-aacenc'
+_voaac_incs = [
+    _voaac_root,
+    os.path.join(_voaac_root, 'aacenc/inc'),
+    os.path.join(_voaac_root, 'aacenc/src'),
+    os.path.join(_voaac_root, 'aacenc/basic_op'),
+    os.path.join(_voaac_root, 'common/include'),
+]
+_voaac_srcs = [
+    'common/cmnMemory.c',
+    'aacenc/basic_op/basicop2.c',
+    'aacenc/basic_op/oper_32b.c',
+] + ['aacenc/src/%s' % f for f in [
+    'aac_rom.c', 'aacenc.c', 'aacenc_core.c', 'adj_thr.c', 'band_nrg.c',
+    'bit_cnt.c', 'bitbuffer.c', 'bitenc.c', 'block_switch.c', 'channel_map.c',
+    'dyn_bits.c', 'grp_data.c', 'interface.c', 'line_pe.c', 'memalign.c',
+    'ms_stereo.c', 'pre_echo_control.c', 'psy_configuration.c', 'psy_main.c',
+    'qc_main.c', 'quantize.c', 'sf_estim.c', 'spreading.c', 'stat_bits.c',
+    'tns.c', 'transform.c',
+]]
+
+
+def voaac_objects(base_env, objdir):
+    """Compile the vendored vo-aacenc sources to objects under objdir."""
+    vo = base_env.Clone()
+    vo.Append(CPPPATH=_voaac_incs)
+    # Third-party C: drop our strict warnings, keep position independence.
+    # __unused is an Android/BSD attribute macro glibc doesn't provide.
+    vo.Append(CCFLAGS=['-fPIC', '-w', '-D__unused='])
+    vo.Append(CXXFLAGS=['-w'])
+    objs = []
+    for s in _voaac_srcs:
+        stem = os.path.splitext(os.path.basename(s))[0]
+        objs.append(vo.Object('%s/%s' % (objdir, stem),
+                              os.path.join(_voaac_root, s)))
+    return objs
+
+
+# --- Vendored libsrt (SRT transport) ---
+# Built from source into vendor/srt/install (encryption off -> no OpenSSL dep):
+#   cmake -S vendor/srt -B vendor/srt/build -DENABLE_ENCRYPTION=OFF \
+#         -DENABLE_APPS=OFF -DENABLE_SHARED=OFF -DENABLE_STATIC=ON \
+#         -DENABLE_CXX_DEPS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+#         -DCMAKE_INSTALL_PREFIX=$PWD/vendor/srt/install
+#   cmake --build vendor/srt/build --target srt_static -j && \
+#         cmake --install vendor/srt/build
+# Falls back to a system libsrt (pkg-config) when the vendored copy is absent.
+_srt_install = 'vendor/srt/install'
+
+
+def enable_srt(an_env, label):
+    liba = os.path.join(_srt_install, 'lib', 'libsrt.a')
+    if os.path.isfile(liba):
+        an_env.Append(CPPPATH=[os.path.join(_srt_install, 'include')])
+        an_env.Append(LIBPATH=[os.path.join(_srt_install, 'lib')])
+        an_env.Append(LIBS=['srt', 'pthread'])
+        an_env.Append(CPPDEFINES=['FRAMETAP_HAVE_SRT'])
+        return
+    try:
+        an_env.ParseConfig('pkg-config --cflags --libs srt')
+        an_env.Append(CPPDEFINES=['FRAMETAP_HAVE_SRT'])
+    except Exception:
+        print('%s: libsrt not found; building without SRT (udp/rtmp work).'
+              % label)
+
+
 sources = ['src/frametap.cpp']
 
 # --- Platform-specific configuration ---
@@ -194,9 +263,12 @@ if 'record' in _targets:
                   'vendor/nv-codec-headers')
             Exit(1)
 
-    # AAC audio encode (libavcodec). System-audio capture uses PipeWire, which
-    # the core library already links.
-    rec_env.ParseConfig('pkg-config --cflags --libs libavcodec libavutil')
+    # AAC audio encode is the vendored vo-aacenc (Apache-2.0). System-audio
+    # capture uses PipeWire, which the core library already links. The network
+    # muxers (MPEG-TS / FLV) are hand-rolled. No ffmpeg/libav dependency at all.
+    # SRT transport links libsrt when present.
+    rec_env.Append(CPPPATH=_voaac_incs)
+    enable_srt(rec_env, 'record')
 
     record = rec_env.Program(
         'examples/record_example',
@@ -204,10 +276,16 @@ if 'record' in _targets:
             'src/encode/nvenc_encoder.cpp',
             'src/encode/mp4_muxer.cpp',
             'src/encode/aac_encoder.cpp',
+            'src/encode/net_stream.cpp',
+            'src/encode/ts_muxer.cpp',
+            'src/encode/ts_sink.cpp',
+            'src/encode/net_transport.cpp',
+            'src/encode/nal_util.cpp',
+            'src/encode/rtmp_sink.cpp',
             'src/audio/pw_capture.cpp',
             'src/encode/recorder.cpp',
             'examples/record_example.cpp',
-        ],
+        ] + voaac_objects(rec_env, 'build/voaac_rec'),
     )
     Depends(record, lib)
     Alias('record', record)
@@ -272,8 +350,8 @@ if build_gui:
         if _gui_rec:
             gui_env.Append(CPPDEFINES=['FRAMETAP_GUI_RECORDING'])
             gui_env.Append(LIBS=['dl'])
-            gui_env.ParseConfig(
-                'pkg-config --cflags --libs libavcodec libavutil')
+            gui_env.Append(CPPPATH=_voaac_incs)
+            enable_srt(gui_env, 'GUI')
             # Compile the encoder to GUI-private objects so they never collide
             # with the `record` target's src/encode/*.o.
             gui_sources = gui_sources + [
@@ -283,10 +361,19 @@ if build_gui:
                                'src/encode/mp4_muxer.cpp'),
                 gui_env.Object('gui/obj/aac_encoder',
                                'src/encode/aac_encoder.cpp'),
+                gui_env.Object('gui/obj/net_stream',
+                               'src/encode/net_stream.cpp'),
+                gui_env.Object('gui/obj/ts_muxer',
+                               'src/encode/ts_muxer.cpp'),
+                gui_env.Object('gui/obj/ts_sink', 'src/encode/ts_sink.cpp'),
+                gui_env.Object('gui/obj/net_transport',
+                               'src/encode/net_transport.cpp'),
+                gui_env.Object('gui/obj/nal_util', 'src/encode/nal_util.cpp'),
+                gui_env.Object('gui/obj/rtmp_sink', 'src/encode/rtmp_sink.cpp'),
                 gui_env.Object('gui/obj/pw_capture',
                                'src/audio/pw_capture.cpp'),
                 gui_env.Object('gui/obj/recorder', 'src/encode/recorder.cpp'),
-            ]
+            ] + voaac_objects(gui_env, 'gui/obj/voaac')
         else:
             print('GUI: nv-codec-headers not found; building without GPU '
                   'recording. To enable it:\n'

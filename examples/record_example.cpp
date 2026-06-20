@@ -28,6 +28,10 @@ struct Options {
   uint64_t audio_pid = 0;
   frametap::AdaptPriority priority = frametap::AdaptPriority::fps;
   std::string output;
+  bool stream = false;
+  frametap::StreamProtocol protocol = frametap::StreamProtocol::srt;
+  std::string stream_url;
+  bool no_file = false;
   bool help = false;
   std::string error;
 };
@@ -46,6 +50,13 @@ void usage(const char *prog) {
       "  --priority fps|quality|none  Adaptation target (default: fps)\n"
       "  -o, --output <file>      Output file (default: a timestamped file in\n"
       "                           ~/Videos/Screencasts)\n"
+      "  --stream <srt|udp|rtmp>  Also stream over the network\n"
+      "  --url <url>              Stream destination. Defaults per protocol:\n"
+      "                           srt  -> srt://0.0.0.0:9000?mode=listener\n"
+      "                                   (you serve; viewer: srt://your-ip:9000)\n"
+      "                           udp  -> udp://127.0.0.1:1234\n"
+      "                           rtmp -> rtmp://127.0.0.1/live/stream\n"
+      "  --no-file                Stream only; don't write a local file\n"
       "  -h, --help               Show this help\n",
       prog);
 }
@@ -109,13 +120,47 @@ Options parse(int argc, char **argv) {
       const char *v = need(i);
       if (v)
         o.output = v;
+    } else if (a == "--stream") {
+      const char *v = need(i);
+      if (!v)
+        break;
+      o.stream = true;
+      if (std::strcmp(v, "srt") == 0)
+        o.protocol = frametap::StreamProtocol::srt;
+      else if (std::strcmp(v, "udp") == 0)
+        o.protocol = frametap::StreamProtocol::udp_ts;
+      else if (std::strcmp(v, "rtmp") == 0)
+        o.protocol = frametap::StreamProtocol::rtmp;
+      else
+        o.error = "invalid --stream (expected srt, udp, or rtmp)";
+    } else if (a == "--url") {
+      const char *v = need(i);
+      if (v)
+        o.stream_url = v;
+    } else if (a == "--no-file") {
+      o.no_file = true;
     } else {
       o.error = "unknown option '" + a + "'";
     }
     if (!o.error.empty())
       break;
   }
-  if (o.output.empty())
+  if (o.no_file && !o.stream)
+    o.error = "--no-file requires --stream";
+  if (o.stream && o.stream_url.empty()) {
+    switch (o.protocol) {
+    case frametap::StreamProtocol::srt:
+      o.stream_url = "srt://0.0.0.0:9000?mode=listener";
+      break;
+    case frametap::StreamProtocol::udp_ts:
+      o.stream_url = "udp://127.0.0.1:1234";
+      break;
+    case frametap::StreamProtocol::rtmp:
+      o.stream_url = "rtmp://127.0.0.1/live/stream";
+      break;
+    }
+  }
+  if (o.output.empty() && !o.no_file)
     o.output = frametap::default_recording_path(o.codec);
   return o;
 }
@@ -148,6 +193,14 @@ int main(int argc, char **argv) {
   cfg.bitrate_kbps = opt.bitrate_kbps;
   cfg.priority = opt.priority;
   cfg.audio_source_pid = opt.audio_pid;
+  if (opt.stream) {
+    cfg.stream.enabled = true;
+    cfg.stream.protocol = opt.protocol;
+    cfg.stream.url = opt.stream_url;
+    cfg.stream.also_save_file = !opt.no_file;
+    std::printf("Streaming to %s%s\n", opt.stream_url.c_str(),
+                opt.no_file ? " (no local file)" : "");
+  }
 
   try {
     frametap::VideoRecorder recorder(opt.output, cfg);
@@ -193,6 +246,14 @@ int main(int argc, char **argv) {
     tap.stop();
     recorder.finish();
 
+    if (opt.stream) {
+      const std::string serr = recorder.stream_error();
+      if (serr.empty())
+        std::printf("Stream finished cleanly.\n");
+      else
+        std::fprintf(stderr, "Stream error: %s\n", serr.c_str());
+    }
+
     auto s = recorder.stats();
     std::printf("\nDone.\n");
     std::printf("  frames in/encoded : %llu / %llu\n",
@@ -204,8 +265,9 @@ int main(int argc, char **argv) {
     std::printf("  avg encode time   : %.2f ms/frame\n", s.avg_encode_ms);
     std::printf("  bitrate (final)   : %d kbps\n", s.current_bitrate_kbps);
     std::printf("  adaptations       : %d\n", s.adaptations);
-    std::printf("\nPlay it:  mpv %s   (or: ffplay %s)\n", opt.output.c_str(),
-                opt.output.c_str());
+    if (!opt.output.empty())
+      std::printf("\nPlay it:  mpv %s   (or: ffplay %s)\n", opt.output.c_str(),
+                  opt.output.c_str());
   } catch (const std::exception &e) {
     std::fprintf(stderr, "Recording failed: %s\n", e.what());
     return 1;

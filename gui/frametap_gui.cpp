@@ -46,6 +46,12 @@ struct AppState {
   bool recording = false;
   std::string record_path;
   frametap::Codec record_codec = frametap::Codec::h264;
+
+  // Network streaming controls.
+  bool stream_enabled = false;
+  int stream_protocol = 0; // 0=srt, 1=udp, 2=rtmp
+  char stream_url[256] = "srt://0.0.0.0:9000?mode=listener";
+  bool stream_save_file = true;
 #endif
 };
 
@@ -69,6 +75,17 @@ static void refresh_sources(AppState &s) {
 }
 
 #ifdef FRAMETAP_GUI_RECORDING
+static frametap::StreamProtocol protocol_from_index(int i) {
+  switch (i) {
+  case 1:
+    return frametap::StreamProtocol::udp_ts;
+  case 2:
+    return frametap::StreamProtocol::rtmp;
+  default:
+    return frametap::StreamProtocol::srt;
+  }
+}
+
 static void start_recording(AppState &s) {
   if (!s.tap) {
     s.status = "Select a source before recording";
@@ -83,11 +100,24 @@ static void start_recording(AppState &s) {
         s.selected_index >= 0 &&
         s.selected_index < static_cast<int>(s.windows.size()))
       cfg.audio_source_pid = s.windows[s.selected_index].pid;
-    s.record_path = frametap::default_recording_path(s.record_codec);
+    if (s.stream_enabled) {
+      cfg.stream.enabled = true;
+      cfg.stream.protocol = protocol_from_index(s.stream_protocol);
+      cfg.stream.url = s.stream_url;
+      cfg.stream.also_save_file = s.stream_save_file;
+    }
+    s.record_path =
+        cfg.stream.enabled && !cfg.stream.also_save_file
+            ? std::string()
+            : frametap::default_recording_path(s.record_codec);
     s.recorder =
         std::make_unique<frametap::VideoRecorder>(s.record_path, cfg);
     s.recording = true;
-    s.status = "Recording to " + s.record_path + "...";
+    if (cfg.stream.enabled)
+      s.status = "Streaming to " + cfg.stream.url +
+                 (s.record_path.empty() ? "" : " + " + s.record_path) + "...";
+    else
+      s.status = "Recording to " + s.record_path + "...";
   } catch (const std::exception &e) {
     s.status = std::string("Record start failed: ") + e.what();
     s.recorder.reset();
@@ -103,9 +133,16 @@ static void stop_recording(AppState &s) {
     // rejecting the frame size), so a mid-recording failure surfaces here.
     s.recorder->finish();
     auto st = s.recorder->stats();
-    s.status = "Saved " + s.record_path + " (" +
-               std::to_string(st.frames_encoded) + " frames, " +
-               std::to_string(st.bytes_written / (1024 * 1024)) + " MB)";
+    const std::string serr = s.recorder->stream_error();
+    if (!serr.empty()) {
+      s.status = "Stream error: " + serr;
+    } else {
+      const std::string where =
+          s.record_path.empty() ? "stream" : s.record_path;
+      s.status = "Saved " + where + " (" +
+                 std::to_string(st.frames_encoded) + " frames, " +
+                 std::to_string(st.bytes_written / (1024 * 1024)) + " MB)";
+    }
   } catch (const std::exception &e) {
     s.status = std::string("Recording failed: ") + e.what();
   }
@@ -303,6 +340,20 @@ static void draw_preview(AppState &s) {
     if (ImGui::Combo("##codec", &ci, codecs, 2))
       s.record_codec =
           ci == 1 ? frametap::Codec::hevc : frametap::Codec::h264;
+
+    ImGui::SameLine();
+    ImGui::Checkbox("Stream", &s.stream_enabled);
+    if (s.stream_enabled) {
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(90);
+      const char *protos[] = {"SRT", "UDP-TS", "RTMP"};
+      ImGui::Combo("##proto", &s.stream_protocol, protos, 3);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(240);
+      ImGui::InputText("##url", s.stream_url, sizeof(s.stream_url));
+      ImGui::SameLine();
+      ImGui::Checkbox("Save file too", &s.stream_save_file);
+    }
   }
 #endif
 

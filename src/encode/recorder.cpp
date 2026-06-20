@@ -4,6 +4,7 @@
 #include "audio/pw_capture.h"
 #include "encode/aac_encoder.h"
 #include "encode/mp4_muxer.h"
+#include "encode/net_stream.h"
 #include "encode/nvenc_encoder.h"
 
 #include <cstdio>
@@ -145,6 +146,11 @@ struct VideoRecorder::Impl {
   enc::Mp4Muxer muxer;
   Controller controller;
 
+  // Whether a local .mp4 is written. False = stream only.
+  bool save_file = true;
+  // Optional network sink, created when config.stream.enabled.
+  std::unique_ptr<enc::NetworkStreamer> stream;
+
   // System-audio capture -> AAC -> muxer audio track. Best-effort: if any of
   // this fails the recording continues video-only.
   audio::PwCapture audio;
@@ -172,11 +178,17 @@ struct VideoRecorder::Impl {
   double encode_ms_total = 0;
 
   Impl(std::string p, EncoderConfig c) : path(std::move(p)), config(c) {
+    save_file = !config.stream.enabled || config.stream.also_save_file;
+    if (config.stream.enabled)
+      stream = std::make_unique<enc::NetworkStreamer>();
+
     // Verify the path is writable up front; the muxer (re)opens it lazily once
     // frame dimensions are known.
-    std::ofstream probe(path, std::ios::binary | std::ios::trunc);
-    if (!probe)
-      throw CaptureError("VideoRecorder: cannot open output file: " + path);
+    if (save_file) {
+      std::ofstream probe(path, std::ios::binary | std::ios::trunc);
+      if (!probe)
+        throw CaptureError("VideoRecorder: cannot open output file: " + path);
+    }
     controller.priority = config.priority;
     controller.min_kbps = config.min_bitrate_kbps;
     controller.target_kbps = config.bitrate_kbps;
@@ -188,7 +200,12 @@ struct VideoRecorder::Impl {
   void lazy_open(int w, int h) {
     width = w;
     height = h;
-    muxer.open(path, config.codec == Codec::hevc, w, h, config.fps);
+    const bool hevc = config.codec == Codec::hevc;
+    if (save_file)
+      muxer.open(path, hevc, w, h, config.fps);
+    if (stream)
+      stream->open(config.stream.protocol, config.stream.url, hevc, w, h,
+                   config.fps);
 
     enc::NvencParams p;
     p.codec = to_enc_codec(config.codec);
@@ -198,7 +215,10 @@ struct VideoRecorder::Impl {
     p.bitrate_kbps = config.bitrate_kbps;
 
     encoder.open(p, [this](const uint8_t *data, size_t size, bool key) {
-      muxer.write_access_unit(data, size, key, cur_pts_90k);
+      if (save_file)
+        muxer.write_access_unit(data, size, key, cur_pts_90k);
+      if (stream)
+        stream->write_access_unit(data, size, key, cur_pts_90k);
       stats.bytes_written += size;
       ++stats.frames_encoded;
     });
@@ -212,6 +232,8 @@ struct VideoRecorder::Impl {
       std::fprintf(stderr, "frametap: audio capture unavailable (%s); "
                            "recording video only\n",
                    e.what());
+      if (stream)
+        stream->no_audio(); // don't make the stream wait for audio that won't come
     }
   }
 
@@ -221,10 +243,17 @@ struct VideoRecorder::Impl {
       if (!audio_inited) {
         aac.open(audio.rate(), audio.channels(), 160000,
                  [this](const uint8_t *data, size_t size) {
-                   muxer.write_audio_sample(data, size);
+                   if (save_file)
+                     muxer.write_audio_sample(data, size);
+                   if (stream)
+                     stream->write_audio_sample(data, size);
                  });
-        muxer.set_audio(aac.sample_rate(), aac.channels(), aac.asc().data(),
-                        aac.asc().size(), 1024);
+        if (save_file)
+          muxer.set_audio(aac.sample_rate(), aac.channels(), aac.asc().data(),
+                          aac.asc().size(), 1024);
+        if (stream)
+          stream->set_audio(aac.sample_rate(), aac.channels(),
+                            aac.asc().data(), aac.asc().size());
         audio_inited = true;
       }
       aac.encode(pcm, frames);
@@ -306,7 +335,10 @@ struct VideoRecorder::Impl {
       encoder.flush();
       encoder.close();
     }
-    muxer.close();
+    if (save_file)
+      muxer.close();
+    if (stream)
+      stream->close();
   }
 
   // Rethrows any error captured on the capture thread. Called from the public
@@ -368,5 +400,9 @@ void VideoRecorder::finish() {
   impl_->rethrow_error();
 }
 VideoRecorder::Stats VideoRecorder::stats() const { return impl_->stats; }
+
+std::string VideoRecorder::stream_error() const {
+  return impl_->stream ? impl_->stream->last_error() : std::string();
+}
 
 } // namespace frametap
