@@ -41,7 +41,8 @@ void usage(const char *prog) {
       "  --seconds <n>            Capture duration (default: 8)\n"
       "  --monitor <id>           Monitor to capture (default: primary)\n"
       "  --priority fps|quality|none  Adaptation target (default: fps)\n"
-      "  -o, --output <file>      Output file (default: recording.h264/.h265)\n"
+      "  -o, --output <file>      Output file (default: a timestamped file in\n"
+      "                           ~/Videos/Screencasts)\n"
       "  -h, --help               Show this help\n",
       prog);
 }
@@ -108,8 +109,7 @@ Options parse(int argc, char **argv) {
       break;
   }
   if (o.output.empty())
-    o.output = o.codec == frametap::Codec::hevc ? "recording.h265"
-                                                : "recording.h264";
+    o.output = frametap::default_recording_path(o.codec);
   return o;
 }
 

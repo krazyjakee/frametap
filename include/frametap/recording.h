@@ -30,6 +30,17 @@ enum class AdaptPriority {
   none,    // No runtime adaptation (fixed bitrate).
 };
 
+// Default directory for saved recordings, created if it doesn't exist:
+//   Linux:   $XDG_VIDEOS_DIR/Screencasts  (else ~/Videos/Screencasts)
+//   macOS:   ~/Movies/Screencasts
+//   Windows: %USERPROFILE%\Videos\Screencasts
+// Falls back to $HOME, then the current directory, if those can't be resolved.
+std::string default_recording_dir();
+
+// A timestamped output path inside default_recording_dir() for the codec,
+// e.g. ".../frametap-20260620-143052.h264".
+std::string default_recording_path(Codec codec);
+
 struct EncoderConfig {
   Codec codec = Codec::h264;
   int fps = 60;             // Target frame rate (also drives GOP / VBV sizing).

@@ -5,7 +5,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <ctime>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <utility>
@@ -16,6 +19,69 @@ namespace {
 
 enc::Codec to_enc_codec(Codec c) {
   return c == Codec::hevc ? enc::Codec::hevc : enc::Codec::h264;
+}
+
+namespace fs = std::filesystem;
+
+std::string home_dir() {
+#ifdef _WIN32
+  if (const char *p = std::getenv("USERPROFILE"))
+    return p;
+  const char *drive = std::getenv("HOMEDRIVE");
+  const char *path = std::getenv("HOMEPATH");
+  if (drive && path)
+    return std::string(drive) + path;
+#else
+  if (const char *p = std::getenv("HOME"))
+    return p;
+#endif
+  return {};
+}
+
+#if !defined(__APPLE__) && !defined(_WIN32)
+// Resolve $XDG_VIDEOS_DIR, then ~/.config/user-dirs.dirs, expanding $HOME.
+std::string xdg_videos_dir() {
+  if (const char *v = std::getenv("XDG_VIDEOS_DIR"); v && *v)
+    return v;
+
+  std::string config;
+  if (const char *c = std::getenv("XDG_CONFIG_HOME"); c && *c)
+    config = c;
+  else if (std::string h = home_dir(); !h.empty())
+    config = h + "/.config";
+  if (config.empty())
+    return {};
+
+  std::ifstream f(config + "/user-dirs.dirs");
+  std::string line;
+  while (std::getline(f, line)) {
+    if (line.find("XDG_VIDEOS_DIR") == std::string::npos)
+      continue;
+    const auto q1 = line.find('"');
+    const auto q2 = (q1 == std::string::npos) ? q1 : line.find('"', q1 + 1);
+    if (q1 == std::string::npos || q2 == std::string::npos)
+      continue;
+    std::string val = line.substr(q1 + 1, q2 - q1 - 1);
+    if (const std::string tok = "$HOME"; val.compare(0, tok.size(), tok) == 0)
+      val = home_dir() + val.substr(tok.size());
+    return val;
+  }
+  return {};
+}
+#endif
+
+// Platform "Videos"/"Movies" base directory (no Screencasts suffix).
+std::string videos_base_dir() {
+  const std::string h = home_dir();
+#if defined(__APPLE__)
+  return h.empty() ? std::string() : h + "/Movies";
+#elif defined(_WIN32)
+  return h.empty() ? std::string() : h + "\\Videos";
+#else
+  if (std::string v = xdg_videos_dir(); !v.empty())
+    return v;
+  return h.empty() ? std::string() : h + "/Videos";
+#endif
 }
 
 // Nudges the encoder bitrate to defend the chosen target under load.
@@ -193,6 +259,34 @@ struct VideoRecorder::Impl {
       std::rethrow_exception(e);
   }
 };
+
+std::string default_recording_dir() {
+  const std::string base = videos_base_dir();
+  fs::path dir = base.empty() ? fs::path(".") : fs::path(base) / "Screencasts";
+  std::error_code ec;
+  fs::create_directories(dir, ec);
+  if (ec) {
+    const std::string h = home_dir();
+    return h.empty() ? std::string(".") : h;
+  }
+  return dir.string();
+}
+
+std::string default_recording_path(Codec codec) {
+  const std::time_t now = std::time(nullptr);
+  std::tm tm{};
+#ifdef _WIN32
+  localtime_s(&tm, &now);
+#else
+  localtime_r(&now, &tm);
+#endif
+  char stamp[32];
+  std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tm);
+  const char *ext = codec == Codec::hevc ? "h265" : "h264";
+  fs::path p = fs::path(default_recording_dir()) /
+               (std::string("frametap-") + stamp + "." + ext);
+  return p.string();
+}
 
 VideoRecorder::VideoRecorder(std::string out_path, EncoderConfig config)
     : impl_(std::make_unique<Impl>(std::move(out_path), config)) {}
