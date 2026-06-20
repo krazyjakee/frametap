@@ -67,6 +67,8 @@ public:
 
   // Flush the encoder, close the file. Call once from the same context that
   // owns teardown (after FrameTap::stop()). Safe to call multiple times.
+  // Rethrows any error raised while encoding on the capture thread (e.g. the
+  // encoder rejecting the frame size), so wrap this call in try/catch.
   void finish();
 
   Stats stats() const;

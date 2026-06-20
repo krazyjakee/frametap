@@ -146,13 +146,23 @@ int main(int argc, char **argv) {
 
     // Pick the capture target.
     auto make_tap = [&]() {
+      auto monitors = frametap::get_monitors();
       if (opt.monitor_id >= 0) {
-        for (const auto &m : frametap::get_monitors())
+        for (const auto &m : monitors)
           if (m.id == opt.monitor_id)
             return frametap::FrameTap(m);
         std::fprintf(stderr,
-                     "Monitor %d not found; using primary instead.\n",
+                     "Monitor %d not found; using first monitor instead.\n",
                      opt.monitor_id);
+      }
+      // No explicit monitor: capture the first one rather than the default
+      // FrameTap(), which spans the whole multi-monitor virtual desktop and
+      // can exceed the codec's max frame dimension (4096 for H.264).
+      if (!monitors.empty()) {
+        const auto &m = monitors.front();
+        std::printf("Capturing monitor %d (%dx%d) \"%s\".\n", m.id, m.width,
+                    m.height, m.name.c_str());
+        return frametap::FrameTap(m);
       }
       return frametap::FrameTap();
     };

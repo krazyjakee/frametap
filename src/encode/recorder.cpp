@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <fstream>
+#include <mutex>
 #include <utility>
 
 namespace frametap {
@@ -76,6 +78,13 @@ struct VideoRecorder::Impl {
   int height = 0;
   bool finished = false;
 
+  // submit() runs on the FrameTap capture thread, so a thrown encoder error
+  // (e.g. NVENC rejecting a frame larger than the codec's max dimension) would
+  // otherwise escape the thread and call std::terminate(). We stash it here and
+  // rethrow from finish(), which the owning thread calls.
+  std::mutex error_mutex;
+  std::exception_ptr error;
+
   Stats stats;
   double encode_ms_total = 0;
 
@@ -113,6 +122,17 @@ struct VideoRecorder::Impl {
   void submit(const Frame &frame) {
     if (finished)
       return;
+    try {
+      do_submit(frame);
+    } catch (...) {
+      std::lock_guard<std::mutex> lock(error_mutex);
+      if (!error)
+        error = std::current_exception();
+      finished = true; // stop encoding; the error is surfaced by finish()
+    }
+  }
+
+  void do_submit(const Frame &frame) {
     const auto &img = frame.image;
     if (img.width == 0 || img.height == 0 || img.data.empty())
       return;
@@ -159,6 +179,19 @@ struct VideoRecorder::Impl {
     file.flush();
     file.close();
   }
+
+  // Rethrows any error captured on the capture thread. Called from the public
+  // finish() (owning thread), never from the destructor.
+  void rethrow_error() {
+    std::exception_ptr e;
+    {
+      std::lock_guard<std::mutex> lock(error_mutex);
+      e = error;
+      error = nullptr;
+    }
+    if (e)
+      std::rethrow_exception(e);
+  }
 };
 
 VideoRecorder::VideoRecorder(std::string out_path, EncoderConfig config)
@@ -173,7 +206,10 @@ VideoRecorder::VideoRecorder(VideoRecorder &&) noexcept = default;
 VideoRecorder &VideoRecorder::operator=(VideoRecorder &&) noexcept = default;
 
 void VideoRecorder::submit(const Frame &frame) { impl_->submit(frame); }
-void VideoRecorder::finish() { impl_->finish(); }
+void VideoRecorder::finish() {
+  impl_->finish();
+  impl_->rethrow_error();
+}
 VideoRecorder::Stats VideoRecorder::stats() const { return impl_->stats; }
 
 } // namespace frametap
