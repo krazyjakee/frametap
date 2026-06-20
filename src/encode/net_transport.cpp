@@ -2,7 +2,10 @@
 
 #include "encode/net_compat.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 #ifdef FRAMETAP_HAVE_SRT
 #include <srt/srt.h>
@@ -112,6 +115,9 @@ class SrtTransport : public Transport {
 public:
   bool open(const ParsedUrl &url, std::string &err) override {
     srt_startup();
+    // Quiet SRT's own logging: the non-blocking accept poll otherwise emits an
+    // error line per attempt ("no pending connection available").
+    srt_setloglevel(LOG_CRIT);
     sock_ = srt_create_socket();
     if (sock_ == SRT_INVALID_SOCK) {
       err = std::string("srt: create_socket: ") + srt_getlasterror_str();
@@ -138,13 +144,38 @@ public:
     }
 
     bool ok = false;
+    bool cancelled = false;
     if (listener) {
       if (srt_bind(sock_, res->ai_addr, res->ai_addrlen) != SRT_ERROR &&
           srt_listen(sock_, 1) != SRT_ERROR) {
-        SRTSOCKET client = srt_accept(sock_, nullptr, nullptr);
+        SRTSOCKET client = SRT_INVALID_SOCK;
+        if (cancel_) {
+          // Poll a non-blocking accept so a stop request can interrupt the
+          // wait for a peer instead of deadlocking teardown.
+          int no = 0;
+          srt_setsockopt(sock_, 0, SRTO_RCVSYN, &no, sizeof(no));
+          while (!cancel_->load()) {
+            client = srt_accept(sock_, nullptr, nullptr);
+            if (client != SRT_INVALID_SOCK)
+              break;
+            int sys = 0;
+            if (srt_getlasterror(&sys) != SRT_EASYNCRCV)
+              break; // a real error, not "no pending connection yet"
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+          }
+          if (client == SRT_INVALID_SOCK && cancel_->load())
+            cancelled = true;
+        } else {
+          client = srt_accept(sock_, nullptr, nullptr);
+        }
         if (client != SRT_INVALID_SOCK) {
           srt_close(sock_);
           sock_ = client;
+          // The accepted socket inherits the listener's options; restore
+          // blocking I/O so send()/recv() behave normally.
+          int yes = 1;
+          srt_setsockopt(sock_, 0, SRTO_RCVSYN, &yes, sizeof(yes));
+          srt_setsockopt(sock_, 0, SRTO_SNDSYN, &yes, sizeof(yes));
           ok = true;
         }
       }
@@ -153,11 +184,14 @@ public:
     }
     freeaddrinfo(res);
     if (!ok) {
-      err = std::string("srt: ") + srt_getlasterror_str();
+      err = cancelled ? std::string() : std::string("srt: ") +
+                                            srt_getlasterror_str();
       return false;
     }
     return true;
   }
+
+  void set_cancel(std::atomic<bool> *cancel) override { cancel_ = cancel; }
 
   bool send(const uint8_t *data, size_t size) override {
     if (sock_ == SRT_INVALID_SOCK)
@@ -192,6 +226,7 @@ public:
 
 private:
   SRTSOCKET sock_ = SRT_INVALID_SOCK;
+  std::atomic<bool> *cancel_ = nullptr;
 };
 #endif // FRAMETAP_HAVE_SRT
 

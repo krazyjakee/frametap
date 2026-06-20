@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -33,6 +34,10 @@ struct StreamSinkParams {
   int audio_rate = 48000;
   int audio_channels = 2;
   std::vector<uint8_t> asc; // AudioSpecificConfig
+
+  // Optional cancellation flag for a blocking connect/accept (SRT listener).
+  // When it flips true the sink aborts start() instead of blocking forever.
+  std::atomic<bool> *cancel = nullptr;
 };
 
 class StreamSink {

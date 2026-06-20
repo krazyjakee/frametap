@@ -39,14 +39,6 @@ NetworkStreamer::NetworkStreamer() = default;
 
 NetworkStreamer::~NetworkStreamer() { close(); }
 
-bool NetworkStreamer::srt_supported() {
-#ifdef FRAMETAP_HAVE_SRT
-  return true;
-#else
-  return false;
-#endif
-}
-
 std::string NetworkStreamer::last_error() const {
   std::lock_guard<std::mutex> lk(m_);
   return error_;
@@ -220,6 +212,7 @@ void NetworkStreamer::run() {
     params.audio_rate = audio_rate_;
     params.audio_channels = audio_channels_;
     params.asc = asc_;
+    params.cancel = &cancel_;
   }
 
   if (proto_ == StreamProtocol::rtmp)
@@ -229,7 +222,10 @@ void NetworkStreamer::run() {
 
   std::string err;
   if (!sink_->start(params, err)) {
-    set_error(err);
+    // A cancelled accept (close() during the wait for a viewer) is not an
+    // error; only report genuine transport failures.
+    if (!cancel_.load() && !err.empty())
+      set_error(err);
     sink_.reset();
     return;
   }
@@ -269,6 +265,10 @@ void NetworkStreamer::run() {
 void NetworkStreamer::close() {
   if (!started_)
     return;
+  // cancel_ unblocks a worker waiting in the SRT listener accept; eos_ unblocks
+  // the queue wait and ends the drain loop. Both are needed so join() can't hang
+  // whether or not a viewer ever connected.
+  cancel_.store(true);
   {
     std::lock_guard<std::mutex> lk(m_);
     eos_ = true;

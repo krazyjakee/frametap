@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -40,6 +41,11 @@ public:
     (void)cap;
     return -1;
   }
+  // Install a cancellation flag checked while open() is blocked waiting for a
+  // peer (SRT listener accept). When the flag becomes true, open() aborts and
+  // returns false instead of blocking forever, so teardown can't deadlock.
+  // Must be set before open(). Transports that never block ignore it.
+  virtual void set_cancel(std::atomic<bool> *cancel) { (void)cancel; }
   virtual void close() = 0;
 };
 

@@ -4,6 +4,7 @@
 
 #include <frametap/recording.h> // StreamProtocol
 
+#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -62,11 +63,7 @@ public:
   // Flush and stop the worker. Safe to call multiple times.
   void close();
 
-  bool is_open() const { return started_; }
   std::string last_error() const;
-
-  // True if this build can talk SRT (compiled with libsrt).
-  static bool srt_supported();
 
 private:
   struct Packet {
@@ -110,6 +107,9 @@ private:
   bool failed_ = false;
   bool eos_ = false;
   std::string error_;
+
+  // Set by close() to break a blocking SRT listener accept on the worker.
+  std::atomic<bool> cancel_{false};
 
   std::unique_ptr<StreamSink> sink_; // worker-only after creation
 };

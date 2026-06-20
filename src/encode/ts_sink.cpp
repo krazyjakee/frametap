@@ -19,6 +19,7 @@ bool TsSink::start(const StreamSinkParams &p, std::string &err) {
     err = "could not parse stream url: " + p.url;
     return false;
   }
+  transport_->set_cancel(p.cancel);
   if (!transport_->open(url, err))
     return false;
 

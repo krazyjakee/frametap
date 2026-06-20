@@ -56,9 +56,11 @@ struct AppState {
 
   // Network receiving (live preview of an incoming SRT stream). The receiver
   // worker pushes decoded frames into frame_queue, the same path capture uses.
+  // Default is caller mode so it connects to a streaming instance using the
+  // default listener URL (set the host for a remote sender).
   std::unique_ptr<frametap::StreamReceiver> receiver;
   bool receiving = false;
-  char receive_url[256] = "srt://0.0.0.0:9000?mode=listener";
+  char receive_url[256] = "srt://127.0.0.1:9000";
 #endif
 };
 
