@@ -77,6 +77,12 @@ static void start_recording(AppState &s) {
   try {
     frametap::EncoderConfig cfg;
     cfg.codec = s.record_codec;
+    // For a window, capture only that app's audio; for a monitor, capture all
+    // system audio (pid 0).
+    if (s.selected_kind == AppState::SourceKind::Window &&
+        s.selected_index >= 0 &&
+        s.selected_index < static_cast<int>(s.windows.size()))
+      cfg.audio_source_pid = s.windows[s.selected_index].pid;
     s.record_path = frametap::default_recording_path(s.record_codec);
     s.recorder =
         std::make_unique<frametap::VideoRecorder>(s.record_path, cfg);

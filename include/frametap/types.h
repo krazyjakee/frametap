@@ -28,6 +28,7 @@ struct Window {
   std::string name;
   int x = 0, y = 0;
   int width = 0, height = 0;
+  uint64_t pid = 0; // owning process (0 if unknown, e.g. on Wayland)
 };
 
 struct ImageData {

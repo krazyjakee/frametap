@@ -25,6 +25,7 @@ struct Options {
   int fps = 60;
   int seconds = 8;
   int monitor_id = -1;
+  uint64_t audio_pid = 0;
   frametap::AdaptPriority priority = frametap::AdaptPriority::fps;
   std::string output;
   bool help = false;
@@ -40,6 +41,8 @@ void usage(const char *prog) {
       "  --fps <n>                Target fps for pacing/adaptation (default: 60)\n"
       "  --seconds <n>            Capture duration (default: 8)\n"
       "  --monitor <id>           Monitor to capture (default: primary)\n"
+      "  --audio-pid <pid>        Capture only this process's audio (default:\n"
+      "                           all system audio)\n"
       "  --priority fps|quality|none  Adaptation target (default: fps)\n"
       "  -o, --output <file>      Output file (default: a timestamped file in\n"
       "                           ~/Videos/Screencasts)\n"
@@ -86,6 +89,10 @@ Options parse(int argc, char **argv) {
       const char *v = need(i);
       if (v)
         o.monitor_id = std::atoi(v);
+    } else if (a == "--audio-pid") {
+      const char *v = need(i);
+      if (v)
+        o.audio_pid = std::strtoull(v, nullptr, 10);
     } else if (a == "--priority") {
       const char *v = need(i);
       if (!v)
@@ -140,6 +147,7 @@ int main(int argc, char **argv) {
   cfg.fps = opt.fps;
   cfg.bitrate_kbps = opt.bitrate_kbps;
   cfg.priority = opt.priority;
+  cfg.audio_source_pid = opt.audio_pid;
 
   try {
     frametap::VideoRecorder recorder(opt.output, cfg);

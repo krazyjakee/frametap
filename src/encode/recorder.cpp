@@ -1,8 +1,12 @@
 #include <frametap/recording.h>
 #include <frametap/frametap.h> // CaptureError
 
+#include "audio/pw_capture.h"
+#include "encode/aac_encoder.h"
 #include "encode/mp4_muxer.h"
 #include "encode/nvenc_encoder.h"
+
+#include <cstdio>
 
 #include <algorithm>
 #include <chrono>
@@ -141,9 +145,21 @@ struct VideoRecorder::Impl {
   enc::Mp4Muxer muxer;
   Controller controller;
 
+  // System-audio capture -> AAC -> muxer audio track. Best-effort: if any of
+  // this fails the recording continues video-only.
+  audio::PwCapture audio;
+  enc::AacEncoder aac;
+  bool audio_inited = false;
+
   int width = 0;
   int height = 0;
   bool finished = false;
+
+  // Wall-clock presentation time of the current frame (90 kHz, first frame =
+  // 0), so the muxer can tag real per-frame durations and keep A/V in sync.
+  std::chrono::steady_clock::time_point start_tp;
+  bool have_start = false;
+  uint64_t cur_pts_90k = 0;
 
   // submit() runs on the FrameTap capture thread, so a thrown encoder error
   // (e.g. NVENC rejecting a frame larger than the codec's max dimension) would
@@ -182,10 +198,39 @@ struct VideoRecorder::Impl {
     p.bitrate_kbps = config.bitrate_kbps;
 
     encoder.open(p, [this](const uint8_t *data, size_t size, bool key) {
-      muxer.write_access_unit(data, size, key);
+      muxer.write_access_unit(data, size, key, cur_pts_90k);
       stats.bytes_written += size;
       ++stats.frames_encoded;
     });
+
+    // Start system-audio capture. Non-fatal on failure (e.g. no PipeWire).
+    try {
+      audio.start(
+          [this](const float *pcm, uint32_t frames) { on_pcm(pcm, frames); },
+          config.audio_source_pid);
+    } catch (const std::exception &e) {
+      std::fprintf(stderr, "frametap: audio capture unavailable (%s); "
+                           "recording video only\n",
+                   e.what());
+    }
+  }
+
+  // Runs on the PipeWire capture thread.
+  void on_pcm(const float *pcm, uint32_t frames) {
+    try {
+      if (!audio_inited) {
+        aac.open(audio.rate(), audio.channels(), 160000,
+                 [this](const uint8_t *data, size_t size) {
+                   muxer.write_audio_sample(data, size);
+                 });
+        muxer.set_audio(aac.sample_rate(), aac.channels(), aac.asc().data(),
+                        aac.asc().size(), 1024);
+        audio_inited = true;
+      }
+      aac.encode(pcm, frames);
+    } catch (...) {
+      // Swallow on the audio thread; video recording is unaffected.
+    }
   }
 
   void submit(const Frame &frame) {
@@ -215,6 +260,15 @@ struct VideoRecorder::Impl {
     if (w != width || h != height)
       return; // resolution change mid-stream not handled in this slice
 
+    // Presentation time of this frame relative to the first one.
+    const auto now = std::chrono::steady_clock::now();
+    if (!have_start) {
+      start_tp = now;
+      have_start = true;
+    }
+    cur_pts_90k = static_cast<uint64_t>(
+        std::chrono::duration<double>(now - start_tp).count() * 90000.0);
+
     ++stats.frames_in;
 
     const auto t0 = std::chrono::steady_clock::now();
@@ -241,6 +295,13 @@ struct VideoRecorder::Impl {
     if (finished)
       return;
     finished = true;
+    // Stop audio first so no PCM arrives while we drain, then flush the AAC
+    // tail into the muxer's audio buffer before the moov is written.
+    audio.stop();
+    if (aac.is_open()) {
+      aac.flush();
+      aac.close();
+    }
     if (encoder.is_open()) {
       encoder.flush();
       encoder.close();

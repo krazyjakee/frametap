@@ -150,6 +150,43 @@ void put_full_box_header(Bytes &v, uint8_t version, uint32_t flags) {
   v.push_back(static_cast<uint8_t>(flags));
 }
 
+// MPEG-4 descriptor: 1-byte tag + 1-byte length (descriptors here are small) +
+// payload.
+void put_descriptor(Bytes &v, uint8_t tag, const Bytes &payload) {
+  v.push_back(tag);
+  v.push_back(static_cast<uint8_t>(payload.size())); // < 128
+  put_bytes(v, payload.data(), payload.size());
+}
+
+// esds contents for an AAC track (without the box header).
+Bytes build_esds(const Bytes &asc) {
+  Bytes dec_specific;
+  dec_specific.insert(dec_specific.end(), asc.begin(), asc.end());
+
+  Bytes dec_config;
+  dec_config.push_back(0x40); // objectTypeIndication: Audio ISO/IEC 14496-3
+  dec_config.push_back(0x15); // streamType=5 (audio) | upStream=0 | reserved=1
+  dec_config.push_back(0);    // bufferSizeDB (24-bit)
+  put_u16(dec_config, 0);
+  put_u32(dec_config, 0);     // maxBitrate
+  put_u32(dec_config, 0);     // avgBitrate
+  put_descriptor(dec_config, 0x05, dec_specific); // DecoderSpecificInfo
+
+  Bytes sl;
+  sl.push_back(0x02); // predefined SL config
+
+  Bytes es;
+  put_u16(es, 0); // ES_ID
+  es.push_back(0); // flags
+  put_descriptor(es, 0x04, dec_config); // DecoderConfigDescriptor
+  put_descriptor(es, 0x06, sl);         // SLConfigDescriptor
+
+  Bytes v;
+  put_full_box_header(v, 0, 0);
+  put_descriptor(v, 0x03, es); // ES_Descriptor
+  return v;
+}
+
 } // namespace
 
 Mp4Muxer::~Mp4Muxer() { close(); }
@@ -195,7 +232,7 @@ void Mp4Muxer::open(const std::string &path, bool hevc, int width, int height,
 }
 
 void Mp4Muxer::write_access_unit(const uint8_t *data, size_t size,
-                                 bool keyframe) {
+                                 bool keyframe, uint64_t pts_90k) {
   if (!file_ || finalized_)
     return;
 
@@ -229,12 +266,42 @@ void Mp4Muxer::write_access_unit(const uint8_t *data, size_t size,
 
   file_.write(reinterpret_cast<const char *>(sample.data()),
               static_cast<std::streamsize>(sample.size()));
-  samples_.push_back({static_cast<uint32_t>(sample.size()), keyframe});
+  samples_.push_back({static_cast<uint32_t>(sample.size()), keyframe, pts_90k});
   mdat_payload_ += sample.size();
 }
 
+void Mp4Muxer::set_audio(int sample_rate, int channels, const uint8_t *asc,
+                         size_t asc_len, int samples_per_frame) {
+  if (finalized_)
+    return;
+  has_audio_ = true;
+  audio_rate_ = sample_rate > 0 ? sample_rate : 48000;
+  audio_channels_ = channels > 0 ? channels : 2;
+  audio_frame_samples_ = samples_per_frame > 0 ? samples_per_frame : 1024;
+  audio_asc_.assign(asc, asc + asc_len);
+}
+
+void Mp4Muxer::write_audio_sample(const uint8_t *data, size_t size) {
+  if (!has_audio_ || finalized_ || size == 0)
+    return;
+  audio_data_.insert(audio_data_.end(), data, data + size);
+  audio_sample_sizes_.push_back(static_cast<uint32_t>(size));
+}
+
 void Mp4Muxer::finalize() {
-  // Patch the mdat largesize.
+  const bool with_audio = has_audio_ && !audio_data_.empty();
+
+  // Append the audio samples as a second chunk at the end of mdat.
+  file_.seekp(0, std::ios::end);
+  uint64_t audio_chunk_offset = 0;
+  if (with_audio) {
+    audio_chunk_offset = static_cast<uint64_t>(file_.tellp());
+    file_.write(reinterpret_cast<const char *>(audio_data_.data()),
+                static_cast<std::streamsize>(audio_data_.size()));
+    mdat_payload_ += audio_data_.size();
+  }
+
+  // Patch the mdat largesize (now covers video + audio payload).
   const uint64_t mdat_box_size = 16 + mdat_payload_;
   file_.seekp(static_cast<std::streamoff>(mdat_size_pos_));
   uint8_t big[8];
@@ -244,10 +311,31 @@ void Mp4Muxer::finalize() {
   file_.seekp(0, std::ios::end);
 
   const uint32_t timescale = 90000;
-  const uint32_t delta = timescale / static_cast<uint32_t>(fps_);
+  const uint32_t default_delta = timescale / static_cast<uint32_t>(fps_);
   const uint32_t n = static_cast<uint32_t>(samples_.size());
-  const uint32_t duration = n * delta;
   const uint64_t chunk_offset = mdat_size_pos_ + 8;
+
+  // Real per-sample durations from frame presentation times (run-length
+  // encoded for stts). The last frame has no successor, so it reuses the
+  // previous gap (or the nominal frame time for a single-frame clip).
+  std::vector<std::pair<uint32_t, uint32_t>> stts_runs; // (count, delta)
+  uint32_t duration = 0;
+  for (uint32_t i = 0; i < n; ++i) {
+    uint32_t d;
+    if (i + 1 < n)
+      d = static_cast<uint32_t>(samples_[i + 1].pts - samples_[i].pts);
+    else
+      d = (n >= 2) ? static_cast<uint32_t>(samples_[i].pts -
+                                           samples_[i - 1].pts)
+                   : default_delta;
+    if (d == 0)
+      d = 1;
+    if (!stts_runs.empty() && stts_runs.back().second == d)
+      stts_runs.back().first++;
+    else
+      stts_runs.emplace_back(1, d);
+    duration += d;
+  }
 
   Bytes config = hevc_ ? build_hvcc(vps_, sps_, pps_) : build_avcc(sps_, pps_);
 
@@ -269,8 +357,8 @@ void Mp4Muxer::finalize() {
     put_u32(m, 0);
     put_bytes(m, kMatrix, 36);
     for (int i = 0; i < 6; ++i)
-      put_u32(m, 0); // pre_defined
-    put_u32(m, 2);   // next_track_id
+      put_u32(m, 0);                       // pre_defined
+    put_u32(m, with_audio ? 3 : 2);        // next_track_id
     box_end(m, b);
   }
 
@@ -379,9 +467,11 @@ void Mp4Muxer::finalize() {
           {
             size_t b = box_begin(m, "stts");
             put_full_box_header(m, 0, 0);
-            put_u32(m, 1); // entry_count
-            put_u32(m, n);
-            put_u32(m, delta);
+            put_u32(m, static_cast<uint32_t>(stts_runs.size()));
+            for (auto [count, d] : stts_runs) {
+              put_u32(m, count);
+              put_u32(m, d);
+            }
             box_end(m, b);
           }
           // stss (sync samples)
@@ -434,6 +524,147 @@ void Mp4Muxer::finalize() {
     }
     box_end(m, trak);
   }
+
+  // Audio trak (AAC / mp4a)
+  if (with_audio) {
+    const uint32_t an = static_cast<uint32_t>(audio_sample_sizes_.size());
+    const uint32_t adelta = static_cast<uint32_t>(audio_frame_samples_);
+    const uint32_t aduration = an * adelta; // in audio timescale
+    const uint32_t amovie_dur = static_cast<uint32_t>(
+        static_cast<uint64_t>(an) * adelta * timescale / audio_rate_);
+
+    size_t trak = box_begin(m, "trak");
+    {
+      size_t b = box_begin(m, "tkhd");
+      put_full_box_header(m, 0, 0x000007);
+      put_u32(m, 0);
+      put_u32(m, 0);
+      put_u32(m, 2); // track_id
+      put_u32(m, 0);
+      put_u32(m, amovie_dur);
+      put_u32(m, 0);
+      put_u32(m, 0);
+      put_u16(m, 0);      // layer
+      put_u16(m, 1);      // alternate_group
+      put_u16(m, 0x0100); // volume 1.0
+      put_u16(m, 0);
+      put_bytes(m, kMatrix, 36);
+      put_u32(m, 0); // width
+      put_u32(m, 0); // height
+      box_end(m, b);
+    }
+    {
+      size_t mdia = box_begin(m, "mdia");
+      {
+        size_t b = box_begin(m, "mdhd");
+        put_full_box_header(m, 0, 0);
+        put_u32(m, 0);
+        put_u32(m, 0);
+        put_u32(m, static_cast<uint32_t>(audio_rate_));
+        put_u32(m, aduration);
+        put_u16(m, 0x55c4);
+        put_u16(m, 0);
+        box_end(m, b);
+      }
+      {
+        size_t b = box_begin(m, "hdlr");
+        put_full_box_header(m, 0, 0);
+        put_u32(m, 0);
+        put_fourcc(m, "soun");
+        put_u32(m, 0);
+        put_u32(m, 0);
+        put_u32(m, 0);
+        const char *name = "SoundHandler";
+        put_bytes(m, reinterpret_cast<const uint8_t *>(name),
+                  std::strlen(name) + 1);
+        box_end(m, b);
+      }
+      {
+        size_t minf = box_begin(m, "minf");
+        {
+          size_t b = box_begin(m, "smhd");
+          put_full_box_header(m, 0, 0);
+          put_u16(m, 0); // balance
+          put_u16(m, 0); // reserved
+          box_end(m, b);
+        }
+        {
+          size_t dinf = box_begin(m, "dinf");
+          size_t dref = box_begin(m, "dref");
+          put_full_box_header(m, 0, 0);
+          put_u32(m, 1);
+          size_t url = box_begin(m, "url ");
+          put_full_box_header(m, 0, 1);
+          box_end(m, url);
+          box_end(m, dref);
+          box_end(m, dinf);
+        }
+        {
+          size_t stbl = box_begin(m, "stbl");
+          {
+            size_t b = box_begin(m, "stsd");
+            put_full_box_header(m, 0, 0);
+            put_u32(m, 1);
+            size_t se = box_begin(m, "mp4a");
+            for (int i = 0; i < 6; ++i)
+              m.push_back(0);  // reserved
+            put_u16(m, 1);     // data_reference_index
+            put_u32(m, 0);     // reserved
+            put_u32(m, 0);     // reserved
+            put_u16(m, static_cast<uint16_t>(audio_channels_));
+            put_u16(m, 16);    // samplesize
+            put_u16(m, 0);     // pre_defined
+            put_u16(m, 0);     // reserved
+            put_u32(m, static_cast<uint32_t>(audio_rate_) << 16);
+            size_t esds = box_begin(m, "esds");
+            Bytes e = build_esds(audio_asc_);
+            put_bytes(m, e.data(), e.size());
+            box_end(m, esds);
+            box_end(m, se);
+            box_end(m, b);
+          }
+          {
+            size_t b = box_begin(m, "stts");
+            put_full_box_header(m, 0, 0);
+            put_u32(m, 1);
+            put_u32(m, an);
+            put_u32(m, adelta);
+            box_end(m, b);
+          }
+          {
+            size_t b = box_begin(m, "stsc");
+            put_full_box_header(m, 0, 0);
+            put_u32(m, 1);
+            put_u32(m, 1);  // first_chunk
+            put_u32(m, an); // samples_per_chunk
+            put_u32(m, 1);
+            box_end(m, b);
+          }
+          {
+            size_t b = box_begin(m, "stsz");
+            put_full_box_header(m, 0, 0);
+            put_u32(m, 0);
+            put_u32(m, an);
+            for (uint32_t sz : audio_sample_sizes_)
+              put_u32(m, sz);
+            box_end(m, b);
+          }
+          {
+            size_t b = box_begin(m, "stco");
+            put_full_box_header(m, 0, 0);
+            put_u32(m, 1);
+            put_u32(m, static_cast<uint32_t>(audio_chunk_offset));
+            box_end(m, b);
+          }
+          box_end(m, stbl);
+        }
+        box_end(m, minf);
+      }
+      box_end(m, mdia);
+    }
+    box_end(m, trak);
+  }
+
   box_end(m, moov);
 
   file_.write(reinterpret_cast<const char *>(m.data()),

@@ -48,6 +48,11 @@ struct EncoderConfig {
   int min_bitrate_kbps = 4000;  // Adaptation floor.
   int max_bitrate_kbps = 60000; // Adaptation ceiling.
   AdaptPriority priority = AdaptPriority::fps;
+
+  // Audio source. 0 captures all system audio (the default sink monitor); a
+  // non-zero process id captures only that application's sound (and any
+  // process in its tree). Use Window::pid when recording a single window.
+  uint64_t audio_source_pid = 0;
 };
 
 // Feed RGBA frames in, get an encoded file out. Not thread-safe: submit() must

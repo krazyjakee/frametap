@@ -127,6 +127,24 @@ std::vector<frametap::Window> x11_enumerate_windows() {
       w.y = attrs.y;
       w.width = attrs.width;
       w.height = attrs.height;
+
+      // _NET_WM_PID: owning process, used to capture this app's audio.
+      Atom net_wm_pid = XInternAtom(dpy, "_NET_WM_PID", True);
+      if (net_wm_pid != None) {
+        Atom type;
+        int fmt;
+        unsigned long n, after;
+        unsigned char *prop = nullptr;
+        if (XGetWindowProperty(dpy, windows[i], net_wm_pid, 0, 1, False,
+                               XA_CARDINAL, &type, &fmt, &n, &after,
+                               &prop) == Success &&
+            prop) {
+          if (fmt == 32 && n >= 1)
+            w.pid = *reinterpret_cast<unsigned long *>(prop);
+          XFree(prop);
+        }
+      }
+
       result.push_back(std::move(w));
     }
 

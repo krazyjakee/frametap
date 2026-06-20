@@ -194,11 +194,17 @@ if 'record' in _targets:
                   'vendor/nv-codec-headers')
             Exit(1)
 
+    # AAC audio encode (libavcodec). System-audio capture uses PipeWire, which
+    # the core library already links.
+    rec_env.ParseConfig('pkg-config --cflags --libs libavcodec libavutil')
+
     record = rec_env.Program(
         'examples/record_example',
         [
             'src/encode/nvenc_encoder.cpp',
             'src/encode/mp4_muxer.cpp',
+            'src/encode/aac_encoder.cpp',
+            'src/audio/pw_capture.cpp',
             'src/encode/recorder.cpp',
             'examples/record_example.cpp',
         ],
@@ -266,6 +272,8 @@ if build_gui:
         if _gui_rec:
             gui_env.Append(CPPDEFINES=['FRAMETAP_GUI_RECORDING'])
             gui_env.Append(LIBS=['dl'])
+            gui_env.ParseConfig(
+                'pkg-config --cflags --libs libavcodec libavutil')
             # Compile the encoder to GUI-private objects so they never collide
             # with the `record` target's src/encode/*.o.
             gui_sources = gui_sources + [
@@ -273,6 +281,10 @@ if build_gui:
                                'src/encode/nvenc_encoder.cpp'),
                 gui_env.Object('gui/obj/mp4_muxer',
                                'src/encode/mp4_muxer.cpp'),
+                gui_env.Object('gui/obj/aac_encoder',
+                               'src/encode/aac_encoder.cpp'),
+                gui_env.Object('gui/obj/pw_capture',
+                               'src/audio/pw_capture.cpp'),
                 gui_env.Object('gui/obj/recorder', 'src/encode/recorder.cpp'),
             ]
         else:
