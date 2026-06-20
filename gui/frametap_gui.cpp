@@ -1,8 +1,10 @@
 #include <frametap/frametap.h>
 #include <frametap/queue.h>
 #ifdef FRAMETAP_GUI_RECORDING
-#include <frametap/receiving.h>
 #include <frametap/recording.h>
+#endif
+#ifdef FRAMETAP_GUI_RECEIVING
+#include <frametap/receiving.h>
 #endif
 
 #include "imgui.h"
@@ -53,7 +55,9 @@ struct AppState {
   int stream_protocol = 0; // 0=srt, 1=udp, 2=rtmp
   char stream_url[256] = "srt://0.0.0.0:9000?mode=listener";
   bool stream_save_file = true;
+#endif
 
+#ifdef FRAMETAP_GUI_RECEIVING
   // Network receiving (live preview of an incoming SRT stream). The receiver
   // worker pushes decoded frames into frame_queue, the same path capture uses.
   // Default is caller mode so it connects to a streaming instance using the
@@ -160,7 +164,9 @@ static void stop_recording(AppState &s) {
   s.recorder.reset();
   s.recording = false;
 }
+#endif // FRAMETAP_GUI_RECORDING
 
+#ifdef FRAMETAP_GUI_RECEIVING
 static void stop_receiving(AppState &s) {
   if (!s.receiver)
     return;
@@ -207,6 +213,8 @@ static void stop_capture(AppState &s) {
 #ifdef FRAMETAP_GUI_RECORDING
   // Recording is bound to the active capture; tearing down the source ends it.
   stop_recording(s);
+#endif
+#ifdef FRAMETAP_GUI_RECEIVING
   stop_receiving(s);
 #endif
   if (s.tap) {
@@ -333,7 +341,7 @@ static void draw_sidebar(AppState &s) {
     refresh_sources(s);
   }
 
-#ifdef FRAMETAP_GUI_RECORDING
+#ifdef FRAMETAP_GUI_RECEIVING
   ImGui::Spacing();
   ImGui::SeparatorText("Receive");
   ImGui::SetNextItemWidth(-1);

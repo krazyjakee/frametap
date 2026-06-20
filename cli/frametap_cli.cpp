@@ -11,12 +11,14 @@
 #include <vector>
 
 #ifdef FRAMETAP_CLI_RECORDING
-#include <frametap/receiving.h>
 #include <frametap/recording.h>
 
 #include <chrono>
 #include <ctime>
 #include <thread>
+#endif
+#ifdef FRAMETAP_CLI_RECEIVING
+#include <frametap/receiving.h>
 #endif
 
 static bool save_bmp(const char *path, const frametap::ImageData &img) {
@@ -110,7 +112,7 @@ static void print_usage(const char *prog) {
       "  --region <x>,<y>,<w>,<h>         Capture a screen region\n"
       "  --interactive                    Interactive mode (menu-driven)\n"
       "\n"
-      "Recording (Linux + NVENC builds):\n"
+      "Recording (Linux/NVENC or macOS/VideoToolbox builds):\n"
       "  --record                         Record video instead of a screenshot\n"
       "  --seconds <n>                    Duration (default: 8)\n"
       "  --codec h264|hevc                Video codec (default: h264)\n"
@@ -121,7 +123,7 @@ static void print_usage(const char *prog) {
       "default)\n"
       "  --no-file                        Stream only; write no local file\n"
       "\n"
-      "Receiving (Linux + NVENC builds):\n"
+      "Receiving (Linux/NVENC or macOS/VideoToolbox builds):\n"
       "  --receive                        Receive an SRT stream to a file\n"
       "  --url <url>                      Source URL (default:\n"
       "                                   srt://0.0.0.0:9000?mode=listener)\n"
@@ -340,7 +342,15 @@ static int run_record(const cli::Args &args) {
   }
   return 0;
 }
+#else  // FRAMETAP_CLI_RECORDING
+static int run_record(const cli::Args &) {
+  std::fprintf(stderr,
+               "Recording is not available in this build.\n");
+  return 1;
+}
+#endif
 
+#ifdef FRAMETAP_CLI_RECEIVING
 static std::string default_received_path() {
   std::time_t t = std::time(nullptr);
   std::tm tm{};
@@ -396,13 +406,7 @@ static int run_receive(const cli::Args &args) {
   }
   return 0;
 }
-#else
-static int run_record(const cli::Args &) {
-  std::fprintf(stderr,
-               "Recording is not available in this build. Rebuild on Linux "
-               "with NVENC headers (vendor/nv-codec-headers) to enable it.\n");
-  return 1;
-}
+#else  // FRAMETAP_CLI_RECEIVING
 static int run_receive(const cli::Args &) {
   std::fprintf(stderr,
                "Receiving is not available in this build. Rebuild on Linux "

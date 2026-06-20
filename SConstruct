@@ -140,13 +140,24 @@ def build_vendored_srt(label):
     prefix = os.path.abspath(_srt_install)
     print('%s: building vendored libsrt (one-time, ~1 min)...' % label)
     try:
-        subprocess.check_call([
+        cmake_cmd = [
             'cmake', '-S', src, '-B', build_dir,
             '-DENABLE_ENCRYPTION=OFF', '-DENABLE_APPS=OFF',
             '-DENABLE_SHARED=OFF', '-DENABLE_STATIC=ON',
             '-DENABLE_CXX_DEPS=OFF', '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
+            # libsrt's CMakeLists requests a pre-3.5 minimum that CMake 4
+            # rejects outright; opt back into the old policy floor.
+            '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
             '-DCMAKE_INSTALL_PREFIX=' + prefix,
-        ])
+        ]
+        # Match the macOS architecture the rest of the build targets so the
+        # static lib isn't a single-arch mismatch at link time.
+        if platform == 'darwin':
+            if macos_arch == 'universal':
+                cmake_cmd.append('-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64')
+            elif macos_arch in ('arm64', 'x86_64'):
+                cmake_cmd.append('-DCMAKE_OSX_ARCHITECTURES=' + macos_arch)
+        subprocess.check_call(cmake_cmd)
         subprocess.check_call(['cmake', '--build', build_dir,
                                '--target', 'srt_static', '-j'])
         subprocess.check_call(['cmake', '--install', build_dir])
@@ -268,57 +279,105 @@ example = example_env.Program(
 Depends(example, lib)
 Alias('example', example)
 
-# --- Recording demo (Linux + NVIDIA NVENC): `scons record` ---
-# Encodes captured frames on the GPU via NVENC into an Annex-B elementary
-# stream. NVENC/CUDA are loaded at runtime (dlopen), so the only build-time
-# requirement is the NVENC API header from nv-codec-headers:
-#   git clone https://github.com/FFmpeg/nv-codec-headers vendor/nv-codec-headers
+# --- Recording / streaming sources ---
+# The send pipeline (capture -> encode -> mux -> file/network) is split into a
+# cross-platform core plus a per-platform video encoder and audio capture:
+#   Linux: NVENC (dlopen'd CUDA/NVENC) + PipeWire audio
+#   macOS: VideoToolbox + ScreenCaptureKit audio
+# The muxers (MP4 / MPEG-TS / FLV) and AAC encode are hand-rolled / vendored, so
+# there is no ffmpeg/libav dependency on either platform.
+_rec_shared_srcs = [
+    'src/encode/mp4_muxer.cpp',
+    'src/encode/aac_encoder.cpp',
+    'src/encode/net_stream.cpp',
+    'src/encode/ts_muxer.cpp',
+    'src/encode/ts_sink.cpp',
+    'src/encode/net_transport.cpp',
+    'src/encode/nal_util.cpp',
+    'src/encode/rtmp_sink.cpp',
+    'src/encode/recorder.cpp',
+]
+_rec_linux_srcs = ['src/encode/nvenc_encoder.cpp', 'src/audio/pw_capture.cpp']
+_rec_macos_srcs = ['src/encode/vt_encoder.mm', 'src/audio/ca_capture.mm']
+# Receive path (SRT in -> TS demux -> decode -> file/preview). The TS demux and
+# receiver are shared; the decoder is NVDEC on Linux, VideoToolbox on macOS.
+_rec_linux_recv_srcs = [
+    'src/decode/ts_demux.cpp',
+    'src/decode/nvdec_decoder.cpp',
+    'src/decode/receiver.cpp',
+]
+_rec_macos_recv_srcs = [
+    'src/decode/ts_demux.cpp',
+    'src/decode/vt_decoder.mm',
+    'src/decode/receiver.cpp',
+]
+# VideoToolbox is the only framework the recording objects add; CoreMedia,
+# CoreVideo and ScreenCaptureKit are already linked by the base darwin env.
+_rec_macos_frameworks = ['VideoToolbox']
+
+
+def recording_objects(an_env, objdir, with_receive):
+    """Compile the send (+ optional receive) recording sources to objects under
+    objdir. Returns the object list; the caller adds voaac_objects separately."""
+    srcs = list(_rec_shared_srcs)
+    if platform == 'darwin':
+        srcs += _rec_macos_srcs
+        if with_receive:
+            srcs += _rec_macos_recv_srcs
+    else:
+        srcs += _rec_linux_srcs
+        if with_receive:
+            srcs += _rec_linux_recv_srcs
+    objs = []
+    for s in srcs:
+        stem = os.path.splitext(os.path.basename(s))[0]
+        objs.append(an_env.Object('%s/%s' % (objdir, stem), s))
+    return objs
+
+
+def enable_nvenc_headers(an_env, label):
+    """Linux: add the nv-codec-headers include path. Returns True on success."""
+    nvh = 'vendor/nv-codec-headers/include'
+    if os.path.isdir(nvh):
+        an_env.Append(CPPPATH=[nvh])
+        return True
+    try:
+        an_env.ParseConfig('pkg-config --cflags ffnvcodec')
+        return True
+    except Exception:
+        return False
+
+
+# --- Recording demo: `scons record` (Linux/NVENC or macOS/VideoToolbox) ---
 _targets = [t.replace('\\', '/') for t in COMMAND_LINE_TARGETS]
 if 'record' in _targets:
-    if not platform.startswith('linux') or target == 'android':
-        print('The `record` target is currently Linux/NVENC-only.')
+    if target == 'android' or platform == 'win32':
+        print('The `record` target is Linux/NVENC or macOS/VideoToolbox only.')
         Exit(1)
 
     rec_env = env.Clone()
     rec_env.Prepend(LIBS=['frametap'])
     rec_env.Append(LIBPATH=['.'])
-    rec_env.Append(LIBS=['dl'])
+    rec_env.Append(CPPPATH=_voaac_incs)
+    # SRT transport links libsrt when present (cross-platform); UDP/RTMP always.
+    enable_srt(rec_env, 'record')
 
-    _nvh = 'vendor/nv-codec-headers/include'
-    if os.path.isdir(_nvh):
-        rec_env.Append(CPPPATH=[_nvh])
+    if platform == 'darwin':
+        rec_env.Append(LINKFLAGS=['-lobjc'])
+        rec_env.Append(FRAMEWORKS=_rec_macos_frameworks)
     else:
-        try:
-            rec_env.ParseConfig('pkg-config --cflags ffnvcodec')
-        except Exception:
+        rec_env.Append(LIBS=['dl'])
+        if not enable_nvenc_headers(rec_env, 'record'):
             print('nv-codec-headers not found. Install it with:\n'
                   '  git clone https://github.com/FFmpeg/nv-codec-headers '
                   'vendor/nv-codec-headers')
             Exit(1)
 
-    # AAC audio encode is the vendored vo-aacenc (Apache-2.0). System-audio
-    # capture uses PipeWire, which the core library already links. The network
-    # muxers (MPEG-TS / FLV) are hand-rolled. No ffmpeg/libav dependency at all.
-    # SRT transport links libsrt when present.
-    rec_env.Append(CPPPATH=_voaac_incs)
-    enable_srt(rec_env, 'record')
-
     record = rec_env.Program(
         'examples/record_example',
-        [
-            'src/encode/nvenc_encoder.cpp',
-            'src/encode/mp4_muxer.cpp',
-            'src/encode/aac_encoder.cpp',
-            'src/encode/net_stream.cpp',
-            'src/encode/ts_muxer.cpp',
-            'src/encode/ts_sink.cpp',
-            'src/encode/net_transport.cpp',
-            'src/encode/nal_util.cpp',
-            'src/encode/rtmp_sink.cpp',
-            'src/audio/pw_capture.cpp',
-            'src/encode/recorder.cpp',
-            'examples/record_example.cpp',
-        ] + voaac_objects(rec_env, 'build/voaac_rec'),
+        recording_objects(rec_env, 'build/rec', with_receive=False)
+        + ['examples/record_example.cpp']
+        + voaac_objects(rec_env, 'build/voaac_rec'),
     )
     Depends(record, lib)
     Alias('record', record)
@@ -333,47 +392,31 @@ if platform == 'darwin':
 
 cli_sources = ['cli/frametap_cli.cpp']
 
-# Optional GPU recording/streaming in the CLI (Linux + NVENC), mirroring the
-# GUI. Gated on `cli` being requested so a plain `scons`/`scons test` never
-# triggers the one-time libsrt build. NVENC/CUDA are dlopen'd at runtime.
-if ('cli' in _targets and platform.startswith('linux')
-        and target != 'android'):
-    _cli_nvh = 'vendor/nv-codec-headers/include'
+# Optional recording/streaming in the CLI (Linux/NVENC or macOS/VideoToolbox),
+# mirroring the GUI. Gated on `cli` being requested so a plain `scons`/`scons
+# test` never triggers the one-time libsrt build. The send path works on both
+# platforms; the receive path (NVDEC) is Linux-only.
+if 'cli' in _targets and target != 'android':
     _cli_rec = False
-    if os.path.isdir(_cli_nvh):
-        cli_env.Append(CPPPATH=[_cli_nvh])
+    _cli_recv = False
+    if platform == 'darwin':
         _cli_rec = True
-    else:
-        try:
-            cli_env.ParseConfig('pkg-config --cflags ffnvcodec')
-            _cli_rec = True
-        except Exception:
-            _cli_rec = False
+        _cli_recv = True  # VideoToolbox decode
+        cli_env.Append(FRAMEWORKS=_rec_macos_frameworks)
+    elif platform.startswith('linux'):
+        _cli_rec = enable_nvenc_headers(cli_env, 'CLI')
+        _cli_recv = _cli_rec  # receive path rides on the NVENC build
+        if _cli_rec:
+            cli_env.Append(LIBS=['dl'])
     if _cli_rec:
         cli_env.Append(CPPDEFINES=['FRAMETAP_CLI_RECORDING'])
-        cli_env.Append(LIBS=['dl'])
+        if _cli_recv:
+            cli_env.Append(CPPDEFINES=['FRAMETAP_CLI_RECEIVING'])
         cli_env.Append(CPPPATH=_voaac_incs)
         enable_srt(cli_env, 'CLI')
-        cli_sources += [
-            cli_env.Object('cli/obj/nvenc_encoder',
-                           'src/encode/nvenc_encoder.cpp'),
-            cli_env.Object('cli/obj/mp4_muxer', 'src/encode/mp4_muxer.cpp'),
-            cli_env.Object('cli/obj/aac_encoder', 'src/encode/aac_encoder.cpp'),
-            cli_env.Object('cli/obj/net_stream', 'src/encode/net_stream.cpp'),
-            cli_env.Object('cli/obj/ts_muxer', 'src/encode/ts_muxer.cpp'),
-            cli_env.Object('cli/obj/ts_sink', 'src/encode/ts_sink.cpp'),
-            cli_env.Object('cli/obj/net_transport',
-                           'src/encode/net_transport.cpp'),
-            cli_env.Object('cli/obj/nal_util', 'src/encode/nal_util.cpp'),
-            cli_env.Object('cli/obj/rtmp_sink', 'src/encode/rtmp_sink.cpp'),
-            cli_env.Object('cli/obj/pw_capture', 'src/audio/pw_capture.cpp'),
-            cli_env.Object('cli/obj/recorder', 'src/encode/recorder.cpp'),
-            # Receive path (SRT in -> TS demux -> NVDEC -> file/preview).
-            cli_env.Object('cli/obj/ts_demux', 'src/decode/ts_demux.cpp'),
-            cli_env.Object('cli/obj/nvdec_decoder',
-                           'src/decode/nvdec_decoder.cpp'),
-            cli_env.Object('cli/obj/receiver', 'src/decode/receiver.cpp'),
-        ] + voaac_objects(cli_env, 'cli/obj/voaac')
+        cli_sources += (
+            recording_objects(cli_env, 'cli/obj', with_receive=_cli_recv)
+            + voaac_objects(cli_env, 'cli/obj/voaac'))
 
 cli = cli_env.Program('cli/frametap', cli_sources)
 Depends(cli, lib)
@@ -404,60 +447,37 @@ if build_gui:
     ]
     gui_sources = ['gui/frametap_gui.cpp', 'vendor/lodepng/lodepng.cpp'] + imgui_sources
 
-    # Optional GPU recording (Linux + NVIDIA NVENC). Mirrors the `record`
-    # target's header detection: when nv-codec-headers is available we compile
-    # the encoder into the GUI and define FRAMETAP_GUI_RECORDING so the Record
-    # button is built. NVENC/CUDA are dlopen'd at runtime. On other platforms
-    # (or without the header) the GUI builds fine, just without recording.
-    if platform.startswith('linux') and target != 'android':
-        _gui_nvh = 'vendor/nv-codec-headers/include'
-        _gui_rec = False
-        if os.path.isdir(_gui_nvh):
-            gui_env.Append(CPPPATH=[_gui_nvh])
-            _gui_rec = True
-        else:
-            try:
-                gui_env.ParseConfig('pkg-config --cflags ffnvcodec')
-                _gui_rec = True
-            except Exception:
-                _gui_rec = False
+    # Optional recording/streaming (Linux/NVENC or macOS/VideoToolbox). When
+    # available we compile the encoder into GUI-private objects (so they never
+    # collide with the `record` target's objects) and define
+    # FRAMETAP_GUI_RECORDING so the Record/Stream controls are built. The
+    # receive path (NVDEC) is Linux-only, gated by FRAMETAP_GUI_RECEIVING.
+    _gui_rec = False
+    _gui_recv = False
+    if platform == 'darwin':
+        _gui_rec = True
+        _gui_recv = True  # VideoToolbox decode
+        gui_env.Append(FRAMEWORKS=_rec_macos_frameworks)
+    elif platform.startswith('linux') and target != 'android':
+        _gui_rec = enable_nvenc_headers(gui_env, 'GUI')
+        _gui_recv = _gui_rec
         if _gui_rec:
-            gui_env.Append(CPPDEFINES=['FRAMETAP_GUI_RECORDING'])
             gui_env.Append(LIBS=['dl'])
-            gui_env.Append(CPPPATH=_voaac_incs)
-            enable_srt(gui_env, 'GUI')
-            # Compile the encoder to GUI-private objects so they never collide
-            # with the `record` target's src/encode/*.o.
-            gui_sources = gui_sources + [
-                gui_env.Object('gui/obj/nvenc_encoder',
-                               'src/encode/nvenc_encoder.cpp'),
-                gui_env.Object('gui/obj/mp4_muxer',
-                               'src/encode/mp4_muxer.cpp'),
-                gui_env.Object('gui/obj/aac_encoder',
-                               'src/encode/aac_encoder.cpp'),
-                gui_env.Object('gui/obj/net_stream',
-                               'src/encode/net_stream.cpp'),
-                gui_env.Object('gui/obj/ts_muxer',
-                               'src/encode/ts_muxer.cpp'),
-                gui_env.Object('gui/obj/ts_sink', 'src/encode/ts_sink.cpp'),
-                gui_env.Object('gui/obj/net_transport',
-                               'src/encode/net_transport.cpp'),
-                gui_env.Object('gui/obj/nal_util', 'src/encode/nal_util.cpp'),
-                gui_env.Object('gui/obj/rtmp_sink', 'src/encode/rtmp_sink.cpp'),
-                gui_env.Object('gui/obj/pw_capture',
-                               'src/audio/pw_capture.cpp'),
-                gui_env.Object('gui/obj/recorder', 'src/encode/recorder.cpp'),
-                # Receive path (SRT in -> TS demux -> NVDEC -> live preview).
-                gui_env.Object('gui/obj/ts_demux', 'src/decode/ts_demux.cpp'),
-                gui_env.Object('gui/obj/nvdec_decoder',
-                               'src/decode/nvdec_decoder.cpp'),
-                gui_env.Object('gui/obj/receiver', 'src/decode/receiver.cpp'),
-            ] + voaac_objects(gui_env, 'gui/obj/voaac')
         else:
             print('GUI: nv-codec-headers not found; building without GPU '
                   'recording. To enable it:\n'
                   '  git clone https://github.com/FFmpeg/nv-codec-headers '
                   'vendor/nv-codec-headers')
+    if _gui_rec:
+        gui_env.Append(CPPDEFINES=['FRAMETAP_GUI_RECORDING'])
+        if _gui_recv:
+            gui_env.Append(CPPDEFINES=['FRAMETAP_GUI_RECEIVING'])
+        gui_env.Append(CPPPATH=_voaac_incs)
+        enable_srt(gui_env, 'GUI')
+        gui_sources = (
+            gui_sources
+            + recording_objects(gui_env, 'gui/obj', with_receive=_gui_recv)
+            + voaac_objects(gui_env, 'gui/obj/voaac'))
 
     if platform == 'darwin':
         gui_env.Append(LINKFLAGS=['-lobjc'])

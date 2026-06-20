@@ -2,9 +2,16 @@
 
 #include <frametap/frametap.h>
 
-#include "decode/nvdec_decoder.h"
 #include "decode/ts_demux.h"
 #include "encode/net_transport.h"
+
+// Video decode is platform-specific: VideoToolbox on macOS, NVDEC on Linux.
+// The TS demux and SRT transport are shared.
+#if defined(__APPLE__)
+#include "decode/vt_decoder.h"
+#else
+#include "decode/nvdec_decoder.h"
+#endif
 
 #include <atomic>
 #include <fstream>
@@ -13,6 +20,12 @@
 #include <vector>
 
 namespace frametap {
+
+#if defined(__APPLE__)
+using VideoDecoder = dec::VtDecoder;
+#else
+using VideoDecoder = dec::NvdecDecoder;
+#endif
 
 struct StreamReceiver::Impl {
   ReceiverConfig config;
@@ -74,7 +87,7 @@ void StreamReceiver::Impl::run() {
   }
   connected = true;
 
-  dec::NvdecDecoder decoder;
+  VideoDecoder decoder;
   bool decoder_open = false;
 
   dec::TsDemuxer demux;

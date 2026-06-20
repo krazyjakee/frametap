@@ -1,11 +1,20 @@
 #include <frametap/recording.h>
 #include <frametap/frametap.h> // CaptureError
 
-#include "audio/pw_capture.h"
 #include "encode/aac_encoder.h"
 #include "encode/mp4_muxer.h"
 #include "encode/net_stream.h"
+
+// The video encoder and system-audio capture are platform-specific; everything
+// else (muxers, AAC, network sinks) is shared. macOS uses VideoToolbox +
+// ScreenCaptureKit audio; Linux uses NVENC + PipeWire.
+#if defined(__APPLE__)
+#include "audio/ca_capture.h"
+#include "encode/vt_encoder.h"
+#else
+#include "audio/pw_capture.h"
 #include "encode/nvenc_encoder.h"
+#endif
 
 #include <cstdio>
 
@@ -21,6 +30,14 @@
 #include <utility>
 
 namespace frametap {
+
+#if defined(__APPLE__)
+using VideoEncoder = enc::VtEncoder;
+using AudioCapture = audio::CaCapture;
+#else
+using VideoEncoder = enc::NvencEncoder;
+using AudioCapture = audio::PwCapture;
+#endif
 
 namespace {
 
@@ -143,7 +160,7 @@ struct Controller {
 struct VideoRecorder::Impl {
   std::string path;
   EncoderConfig config;
-  enc::NvencEncoder encoder;
+  VideoEncoder encoder;
   enc::Mp4Muxer muxer;
   Controller controller;
 
@@ -154,7 +171,7 @@ struct VideoRecorder::Impl {
 
   // System-audio capture -> AAC -> muxer audio track. Best-effort: if any of
   // this fails the recording continues video-only.
-  audio::PwCapture audio;
+  AudioCapture audio;
   enc::AacEncoder aac;
   bool audio_inited = false;
 
@@ -208,7 +225,11 @@ struct VideoRecorder::Impl {
       stream->open(config.stream.protocol, config.stream.url, hevc, w, h,
                    config.fps);
 
+#if defined(__APPLE__)
+    enc::EncParams p;
+#else
     enc::NvencParams p;
+#endif
     p.codec = to_enc_codec(config.codec);
     p.width = w;
     p.height = h;
