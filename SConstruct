@@ -198,6 +198,7 @@ if 'record' in _targets:
         'examples/record_example',
         [
             'src/encode/nvenc_encoder.cpp',
+            'src/encode/mp4_muxer.cpp',
             'src/encode/recorder.cpp',
             'examples/record_example.cpp',
         ],
@@ -270,6 +271,8 @@ if build_gui:
             gui_sources = gui_sources + [
                 gui_env.Object('gui/obj/nvenc_encoder',
                                'src/encode/nvenc_encoder.cpp'),
+                gui_env.Object('gui/obj/mp4_muxer',
+                               'src/encode/mp4_muxer.cpp'),
                 gui_env.Object('gui/obj/recorder', 'src/encode/recorder.cpp'),
             ]
         else:

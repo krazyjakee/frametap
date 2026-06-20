@@ -10,9 +10,9 @@
 //
 // This is the first slice of frametap's video pipeline: it consumes the RGBA
 // frames delivered by FrameTap::on_frame, encodes them with NVENC (H.264 or
-// HEVC) on the GPU, and writes an Annex-B elementary stream to disk. An
-// adaptive controller nudges the encoder bitrate at runtime so a chosen
-// target -- frames-per-second or visual quality -- is held under load.
+// HEVC) on the GPU, and writes a directly-playable .mp4 file. An adaptive
+// controller nudges the encoder bitrate at runtime so a chosen target --
+// frames-per-second or visual quality -- is held under load.
 //
 // Only compiled into the `scons record` target; the core library is unchanged.
 

@@ -1,6 +1,7 @@
 #include <frametap/recording.h>
 #include <frametap/frametap.h> // CaptureError
 
+#include "encode/mp4_muxer.h"
 #include "encode/nvenc_encoder.h"
 
 #include <algorithm>
@@ -136,8 +137,8 @@ struct Controller {
 struct VideoRecorder::Impl {
   std::string path;
   EncoderConfig config;
-  std::ofstream file;
   enc::NvencEncoder encoder;
+  enc::Mp4Muxer muxer;
   Controller controller;
 
   int width = 0;
@@ -154,10 +155,11 @@ struct VideoRecorder::Impl {
   Stats stats;
   double encode_ms_total = 0;
 
-  Impl(std::string p, EncoderConfig c)
-      : path(std::move(p)), config(c),
-        file(path, std::ios::binary | std::ios::trunc) {
-    if (!file)
+  Impl(std::string p, EncoderConfig c) : path(std::move(p)), config(c) {
+    // Verify the path is writable up front; the muxer (re)opens it lazily once
+    // frame dimensions are known.
+    std::ofstream probe(path, std::ios::binary | std::ios::trunc);
+    if (!probe)
       throw CaptureError("VideoRecorder: cannot open output file: " + path);
     controller.priority = config.priority;
     controller.min_kbps = config.min_bitrate_kbps;
@@ -170,6 +172,8 @@ struct VideoRecorder::Impl {
   void lazy_open(int w, int h) {
     width = w;
     height = h;
+    muxer.open(path, config.codec == Codec::hevc, w, h, config.fps);
+
     enc::NvencParams p;
     p.codec = to_enc_codec(config.codec);
     p.width = w;
@@ -177,9 +181,8 @@ struct VideoRecorder::Impl {
     p.fps = config.fps;
     p.bitrate_kbps = config.bitrate_kbps;
 
-    encoder.open(p, [this](const uint8_t *data, size_t size, bool /*key*/) {
-      file.write(reinterpret_cast<const char *>(data),
-                 static_cast<std::streamsize>(size));
+    encoder.open(p, [this](const uint8_t *data, size_t size, bool key) {
+      muxer.write_access_unit(data, size, key);
       stats.bytes_written += size;
       ++stats.frames_encoded;
     });
@@ -242,8 +245,7 @@ struct VideoRecorder::Impl {
       encoder.flush();
       encoder.close();
     }
-    file.flush();
-    file.close();
+    muxer.close();
   }
 
   // Rethrows any error captured on the capture thread. Called from the public
@@ -282,9 +284,9 @@ std::string default_recording_path(Codec codec) {
 #endif
   char stamp[32];
   std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &tm);
-  const char *ext = codec == Codec::hevc ? "h265" : "h264";
+  (void)codec; // both codecs are wrapped in an .mp4 container
   fs::path p = fs::path(default_recording_dir()) /
-               (std::string("frametap-") + stamp + "." + ext);
+               (std::string("frametap-") + stamp + ".mp4");
   return p.string();
 }
 
