@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <thread>
 
@@ -125,6 +126,17 @@ public:
     }
     int live = SRTT_LIVE;
     srt_setsockopt(sock_, 0, SRTO_TRANSTYPE, &live, sizeof(live));
+
+    // SRT's live profile adds a 120 ms receiver buffer (SRTO_LATENCY) to absorb
+    // public-internet jitter. On a LAN / localhost that is pure added delay, so
+    // honor an optional ?latency=<ms> from the URL. It's set on both peers
+    // (caller and listener) since the effective latency is the max of the two
+    // ends; set it before bind/connect so the accepted socket inherits it.
+    if (const auto lq = url.query.find("latency"); lq != url.query.end()) {
+      int ms = std::atoi(lq->second.c_str());
+      if (ms >= 0 && ms <= 5000)
+        srt_setsockopt(sock_, 0, SRTO_LATENCY, &ms, sizeof(ms));
+    }
 
     const auto it = url.query.find("mode");
     const bool listener =

@@ -53,7 +53,7 @@ struct AppState {
   // Network streaming controls.
   bool stream_enabled = false;
   int stream_protocol = 0; // 0=srt, 1=udp, 2=rtmp
-  char stream_url[256] = "srt://0.0.0.0:9000?mode=listener";
+  char stream_url[256] = "srt://0.0.0.0:9000?mode=listener&latency=30";
   bool stream_save_file = true;
 #endif
 
@@ -64,7 +64,7 @@ struct AppState {
   // default listener URL (set the host for a remote sender).
   std::unique_ptr<frametap::StreamReceiver> receiver;
   bool receiving = false;
-  char receive_url[256] = "srt://127.0.0.1:9000";
+  char receive_url[256] = "srt://127.0.0.1:9000?latency=30";
 #endif
 };
 

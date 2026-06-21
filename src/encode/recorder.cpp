@@ -7,10 +7,14 @@
 
 // The video encoder and system-audio capture are platform-specific; everything
 // else (muxers, AAC, network sinks) is shared. macOS uses VideoToolbox +
-// ScreenCaptureKit audio; Linux uses NVENC + PipeWire.
+// ScreenCaptureKit audio; Linux uses NVENC + PipeWire; Windows uses NVENC with
+// audio stubbed for now (video-only) until a WASAPI backend lands.
 #if defined(__APPLE__)
 #include "audio/ca_capture.h"
 #include "encode/vt_encoder.h"
+#elif defined(_WIN32)
+#include "audio/null_capture.h"
+#include "encode/nvenc_encoder.h"
 #else
 #include "audio/pw_capture.h"
 #include "encode/nvenc_encoder.h"
@@ -34,6 +38,9 @@ namespace frametap {
 #if defined(__APPLE__)
 using VideoEncoder = enc::VtEncoder;
 using AudioCapture = audio::CaCapture;
+#elif defined(_WIN32)
+using VideoEncoder = enc::NvencEncoder;
+using AudioCapture = audio::NullCapture;
 #else
 using VideoEncoder = enc::NvencEncoder;
 using AudioCapture = audio::PwCapture;

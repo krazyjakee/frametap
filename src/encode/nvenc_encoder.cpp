@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-#include <dlfcn.h>
+#include "encode/dynlib.h"
 
 #include <ffnvcodec/nvEncodeAPI.h>
 
@@ -47,12 +47,12 @@ struct CudaApi {
   PFN_cuMemcpyHtoD cuMemcpyHtoD = nullptr;
 
   bool load() {
-    lib = dlopen("libcuda.so.1", RTLD_NOW | RTLD_GLOBAL);
+    lib = frametap::enc::dl_open(FT_CUDA_LIB);
     if (!lib)
-      lib = dlopen("libcuda.so", RTLD_NOW | RTLD_GLOBAL);
+      lib = frametap::enc::dl_open(FT_CUDA_LIB_ALT);
     if (!lib)
       return false;
-    auto sym = [&](const char *n) { return dlsym(lib, n); };
+    auto sym = [&](const char *n) { return frametap::enc::dl_sym(lib, n); };
     cuInit = reinterpret_cast<PFN_cuInit>(sym("cuInit"));
     cuDeviceGet = reinterpret_cast<PFN_cuDeviceGet>(sym("cuDeviceGet"));
     cuCtxCreate = reinterpret_cast<PFN_cuCtxCreate>(sym("cuCtxCreate_v2"));
@@ -174,16 +174,16 @@ void NvencEncoder::Impl::open(const NvencParams &p, PacketSink s) {
     throw std::runtime_error(
         "NVENC: failed to load libcuda.so.1 (is the NVIDIA driver installed?)");
 
-  nvenc_lib = dlopen("libnvidia-encode.so.1", RTLD_NOW | RTLD_GLOBAL);
+  nvenc_lib = dl_open(FT_NVENC_LIB);
   if (!nvenc_lib)
-    nvenc_lib = dlopen("libnvidia-encode.so", RTLD_NOW | RTLD_GLOBAL);
+    nvenc_lib = dl_open(FT_NVENC_LIB_ALT);
   if (!nvenc_lib)
-    throw std::runtime_error(
-        "NVENC: failed to load libnvidia-encode.so.1 (NVENC unavailable)");
+    throw std::runtime_error("NVENC: failed to load " FT_NVENC_LIB
+                             " (NVENC unavailable)");
 
   using PFN_Create = NVENCSTATUS (*)(NV_ENCODE_API_FUNCTION_LIST *);
   auto create = reinterpret_cast<PFN_Create>(
-      dlsym(nvenc_lib, "NvEncodeAPICreateInstance"));
+      dl_sym(nvenc_lib, "NvEncodeAPICreateInstance"));
   if (!create)
     throw std::runtime_error("NVENC: NvEncodeAPICreateInstance not found");
 
@@ -399,11 +399,11 @@ void NvencEncoder::Impl::close() {
     ctx = nullptr;
   }
   if (nvenc_lib) {
-    dlclose(nvenc_lib);
+    dl_close(nvenc_lib);
     nvenc_lib = nullptr;
   }
   if (cuda.lib) {
-    dlclose(cuda.lib);
+    dl_close(cuda.lib);
     cuda.lib = nullptr;
   }
   opened = false;

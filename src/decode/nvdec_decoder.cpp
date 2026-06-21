@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include <dlfcn.h>
+#include "encode/dynlib.h"
 
 #include <ffnvcodec/dynlink_cuda.h>
 #include <ffnvcodec/dynlink_nvcuvid.h>
@@ -27,12 +27,12 @@ struct CudaApi {
   tcuMemcpy2D_v2 *cuMemcpy2D = nullptr;
 
   bool load() {
-    lib = dlopen("libcuda.so.1", RTLD_NOW | RTLD_GLOBAL);
+    lib = frametap::enc::dl_open(FT_CUDA_LIB);
     if (!lib)
-      lib = dlopen("libcuda.so", RTLD_NOW | RTLD_GLOBAL);
+      lib = frametap::enc::dl_open(FT_CUDA_LIB_ALT);
     if (!lib)
       return false;
-    auto sym = [&](const char *n) { return dlsym(lib, n); };
+    auto sym = [&](const char *n) { return frametap::enc::dl_sym(lib, n); };
     cuInit = reinterpret_cast<tcuInit *>(sym("cuInit"));
     cuDeviceGet = reinterpret_cast<tcuDeviceGet *>(sym("cuDeviceGet"));
     cuCtxCreate = reinterpret_cast<tcuCtxCreate_v2 *>(sym("cuCtxCreate_v2"));
@@ -62,12 +62,12 @@ struct CuvidApi {
   tcuvidCtxLockDestroy *CtxLockDestroy = nullptr;
 
   bool load() {
-    lib = dlopen("libnvcuvid.so.1", RTLD_NOW | RTLD_GLOBAL);
+    lib = frametap::enc::dl_open(FT_NVCUVID_LIB);
     if (!lib)
-      lib = dlopen("libnvcuvid.so", RTLD_NOW | RTLD_GLOBAL);
+      lib = frametap::enc::dl_open(FT_NVCUVID_LIB_ALT);
     if (!lib)
       return false;
-    auto sym = [&](const char *n) { return dlsym(lib, n); };
+    auto sym = [&](const char *n) { return frametap::enc::dl_sym(lib, n); };
     CreateVideoParser =
         reinterpret_cast<tcuvidCreateVideoParser *>(sym("cuvidCreateVideoParser"));
     ParseVideoData =
@@ -322,11 +322,11 @@ void NvdecDecoder::Impl::open(Codec c, FrameSink s) {
   sink = std::move(s);
 
   if (!cuda.load())
-    throw std::runtime_error(
-        "NVDEC: failed to load libcuda.so.1 (is the NVIDIA driver installed?)");
+    throw std::runtime_error("NVDEC: failed to load " FT_CUDA_LIB
+                             " (is the NVIDIA driver installed?)");
   if (!cuvid.load())
-    throw std::runtime_error(
-        "NVDEC: failed to load libnvcuvid.so.1 (NVDEC unavailable)");
+    throw std::runtime_error("NVDEC: failed to load " FT_NVCUVID_LIB
+                             " (NVDEC unavailable)");
 
   if (cuda.cuInit(0) != CUDA_OK)
     throw std::runtime_error("NVDEC: cuInit failed");
@@ -345,7 +345,7 @@ void NvdecDecoder::Impl::open(Codec c, FrameSink s) {
   pp.CodecType = codec == Codec::hevc ? cudaVideoCodec_HEVC : cudaVideoCodec_H264;
   pp.ulMaxNumDecodeSurfaces = 1; // overridden by the sequence callback
   pp.ulClockRate = 90000;        // timestamps pass through in 90 kHz units
-  pp.ulMaxDisplayDelay = 1;      // low latency
+  pp.ulMaxDisplayDelay = 0;      // zero reorder delay (stream has no B-frames)
   pp.pUserData = this;
   pp.pfnSequenceCallback = on_sequence;
   pp.pfnDecodePicture = on_decode;
@@ -396,11 +396,11 @@ void NvdecDecoder::Impl::close() {
     ctx = nullptr;
   }
   if (cuvid.lib) {
-    dlclose(cuvid.lib);
+    frametap::enc::dl_close(cuvid.lib);
     cuvid.lib = nullptr;
   }
   if (cuda.lib) {
-    dlclose(cuda.lib);
+    frametap::enc::dl_close(cuda.lib);
     cuda.lib = nullptr;
   }
   opened = false;
