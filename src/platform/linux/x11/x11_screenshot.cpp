@@ -11,6 +11,13 @@ namespace frametap::internal {
 
 ImageData x11_take_screenshot(::Window target, Rect region,
                               bool capture_window) {
+  // H6: Reject region dimensions that would overflow the pixel buffer before
+  // they are truncated to int and clamped to the display. Done before opening
+  // the display so an oversized request fails cleanly.
+  if (!capture_window && region.width > 0 && region.height > 0)
+    checked_rgba_size(static_cast<size_t>(region.width),
+                      static_cast<size_t>(region.height));
+
   x11_err::install();
 
   Display *dpy = XOpenDisplay(nullptr);

@@ -10,6 +10,17 @@
 #include <string>
 #include <vector>
 
+#ifdef FRAMETAP_CLI_RECORDING
+#include <frametap/recording.h>
+
+#include <chrono>
+#include <ctime>
+#include <thread>
+#endif
+#ifdef FRAMETAP_CLI_RECEIVING
+#include <frametap/receiving.h>
+#endif
+
 static bool save_bmp(const char *path, const frametap::ImageData &img) {
   const uint32_t w = static_cast<uint32_t>(img.width);
   const uint32_t h = static_cast<uint32_t>(img.height);
@@ -101,8 +112,26 @@ static void print_usage(const char *prog) {
       "  --region <x>,<y>,<w>,<h>         Capture a screen region\n"
       "  --interactive                    Interactive mode (menu-driven)\n"
       "\n"
+      "Recording (Linux/NVENC or macOS/VideoToolbox builds):\n"
+      "  --record                         Record video instead of a screenshot\n"
+      "  --seconds <n>                    Duration (default: 8)\n"
+      "  --codec h264|hevc                Video codec (default: h264)\n"
+      "  --bitrate <kbps>                 Starting bitrate (default: 20000)\n"
+      "  --fps <n>                        Target fps (default: 60)\n"
+      "  --stream <srt|udp|rtmp>          Also stream over the network\n"
+      "  --url <url>                      Stream destination (per-protocol "
+      "default)\n"
+      "  --no-file                        Stream only; write no local file\n"
+      "\n"
+      "Receiving (Linux/NVENC or macOS/VideoToolbox builds):\n"
+      "  --receive                        Receive an SRT stream to a file\n"
+      "  --url <url>                      Source URL (default:\n"
+      "                                   srt://0.0.0.0:9000?mode=listener)\n"
+      "  -o, --output <file>              Output .ts file (default: timestamped)\n"
+      "\n"
       "Options:\n"
-      "  -o, --output <file>              Output file (default: screenshot.bmp)\n"
+      "  -o, --output <file>              Output file (default: screenshot.bmp,\n"
+      "                                   or a timestamped video with --record)\n"
       "  --list-monitors                  List available monitors and exit\n"
       "  --list-windows                   List available windows and exit\n"
       "  --check-permissions              Check capture permissions and exit\n"
@@ -205,6 +234,187 @@ static int run_interactive(const char *output) {
   return 0;
 }
 
+// --- Recording (Linux + NVENC builds only) ---
+
+#ifdef FRAMETAP_CLI_RECORDING
+static int run_record(const cli::Args &args) {
+  auto perms = frametap::check_permissions();
+  if (perms.status == frametap::PermissionStatus::error) {
+    std::fprintf(stderr, "%s\n", perms.summary.c_str());
+    for (const auto &d : perms.details)
+      std::fprintf(stderr, "  %s\n", d.c_str());
+    return 1;
+  }
+
+  const frametap::Codec codec =
+      args.codec == "hevc" ? frametap::Codec::hevc : frametap::Codec::h264;
+
+  frametap::EncoderConfig cfg;
+  cfg.codec = codec;
+  cfg.fps = args.fps;
+  cfg.bitrate_kbps = args.bitrate_kbps;
+
+  if (args.stream) {
+    cfg.stream.enabled = true;
+    cfg.stream.also_save_file = !args.no_file;
+    if (args.stream_protocol == "udp")
+      cfg.stream.protocol = frametap::StreamProtocol::udp_ts;
+    else if (args.stream_protocol == "rtmp")
+      cfg.stream.protocol = frametap::StreamProtocol::rtmp;
+    else
+      cfg.stream.protocol = frametap::StreamProtocol::srt;
+    cfg.stream.url = args.stream_url;
+    if (cfg.stream.url.empty()) {
+      switch (cfg.stream.protocol) {
+      case frametap::StreamProtocol::udp_ts:
+        cfg.stream.url = "udp://127.0.0.1:1234";
+        break;
+      case frametap::StreamProtocol::rtmp:
+        cfg.stream.url = "rtmp://127.0.0.1/live/stream";
+        break;
+      default:
+        cfg.stream.url = "srt://0.0.0.0:9000?mode=listener";
+        break;
+      }
+    }
+  }
+
+  // Output path: explicit -o wins; else a timestamped file unless stream-only.
+  std::string output;
+  const bool save_file = !args.stream || !args.no_file;
+  if (save_file)
+    output = args.output_set ? args.output
+                             : frametap::default_recording_path(codec);
+
+  try {
+    frametap::VideoRecorder recorder(output, cfg);
+
+    auto monitors = frametap::get_monitors();
+    auto make_tap = [&]() {
+      if (args.monitor_id >= 0) {
+        for (const auto &m : monitors)
+          if (m.id == args.monitor_id)
+            return frametap::FrameTap(m);
+        std::fprintf(stderr, "Monitor %d not found; using the first one.\n",
+                     args.monitor_id);
+      }
+      if (!monitors.empty()) {
+        const auto &m = monitors.front();
+        std::printf("Capturing monitor %d (%dx%d) \"%s\".\n", m.id, m.width,
+                    m.height, m.name.c_str());
+        return frametap::FrameTap(m);
+      }
+      return frametap::FrameTap();
+    };
+
+    frametap::FrameTap tap = make_tap();
+    tap.on_frame([&recorder](const frametap::Frame &f) { recorder.submit(f); });
+
+    if (cfg.stream.enabled)
+      std::printf("Streaming to %s%s\n", cfg.stream.url.c_str(),
+                  args.no_file ? " (no local file)" : "");
+    std::printf("Recording %s for %d s (codec=%s, %d kbps)...\n",
+                output.empty() ? "(stream only)" : output.c_str(), args.seconds,
+                args.codec.c_str(), args.bitrate_kbps);
+
+    tap.start_async();
+    std::this_thread::sleep_for(std::chrono::seconds(args.seconds));
+    tap.stop();
+    recorder.finish();
+
+    if (cfg.stream.enabled) {
+      const std::string serr = recorder.stream_error();
+      if (serr.empty())
+        std::printf("Stream finished cleanly.\n");
+      else
+        std::fprintf(stderr, "Stream error: %s\n", serr.c_str());
+    }
+
+    auto s = recorder.stats();
+    std::printf("\nDone. frames %llu, %.1f MB, avg %.2f ms/frame.\n",
+                static_cast<unsigned long long>(s.frames_in),
+                s.bytes_written / (1024.0 * 1024.0), s.avg_encode_ms);
+    if (!output.empty())
+      std::printf("Play it:  mpv %s\n", output.c_str());
+  } catch (const std::exception &e) {
+    std::fprintf(stderr, "Recording failed: %s\n", e.what());
+    return 1;
+  }
+  return 0;
+}
+#else  // FRAMETAP_CLI_RECORDING
+static int run_record(const cli::Args &) {
+  std::fprintf(stderr,
+               "Recording is not available in this build.\n");
+  return 1;
+}
+#endif
+
+#ifdef FRAMETAP_CLI_RECEIVING
+static std::string default_received_path() {
+  std::time_t t = std::time(nullptr);
+  std::tm tm{};
+  localtime_r(&t, &tm);
+  char buf[64];
+  std::strftime(buf, sizeof(buf), "received-%Y%m%d-%H%M%S.ts", &tm);
+  return buf;
+}
+
+static int run_receive(const cli::Args &args) {
+  frametap::ReceiverConfig cfg;
+  cfg.url = args.stream_url.empty() ? "srt://0.0.0.0:9000?mode=listener"
+                                    : args.stream_url;
+  // The CLI writes the received stream to a directly-playable .ts file; it does
+  // not decode (that path is for the GUI's live preview).
+  cfg.decode = false;
+  cfg.out_path = args.output_set ? args.output : default_received_path();
+
+  try {
+    frametap::StreamReceiver rx(cfg);
+    rx.start();
+
+    std::printf("Receiving from %s -> %s\n", cfg.url.c_str(),
+                cfg.out_path.c_str());
+    std::printf("Waiting for a sender to connect (Ctrl-C to stop)...\n");
+
+    // Wait for a peer (listener mode blocks in the worker until one connects).
+    while (rx.running() && !rx.connected() && rx.error().empty())
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    if (!rx.error().empty()) {
+      std::fprintf(stderr, "Receive error: %s\n", rx.error().c_str());
+      return 1;
+    }
+    if (rx.connected())
+      std::printf("Connected. Receiving until the sender disconnects...\n");
+
+    while (rx.running())
+      std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    rx.stop();
+    auto s = rx.stats();
+    if (!rx.error().empty()) {
+      std::fprintf(stderr, "Receive error: %s\n", rx.error().c_str());
+      return 1;
+    }
+    std::printf("\nDone. %.1f MB received -> %s\n",
+                s.bytes_received / (1024.0 * 1024.0), cfg.out_path.c_str());
+    std::printf("Play it:  mpv %s\n", cfg.out_path.c_str());
+  } catch (const std::exception &e) {
+    std::fprintf(stderr, "Receive failed: %s\n", e.what());
+    return 1;
+  }
+  return 0;
+}
+#else  // FRAMETAP_CLI_RECEIVING
+static int run_receive(const cli::Args &) {
+  std::fprintf(stderr,
+               "Receiving is not available in this build. Rebuild on Linux "
+               "with NVENC headers (vendor/nv-codec-headers) to enable it.\n");
+  return 1;
+}
+#endif
+
 // --- Main ---
 
 int main(int argc, char *argv[]) {
@@ -260,6 +470,12 @@ int main(int argc, char *argv[]) {
       std::printf("  %s\n", d.c_str());
     return perms.status == frametap::PermissionStatus::error ? 1 : 0;
   }
+
+  if (args.receive)
+    return run_receive(args);
+
+  if (args.record)
+    return run_record(args);
 
   if (args.mode == cli::CaptureMode::interactive)
     return run_interactive(args.output.c_str());

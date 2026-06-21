@@ -1,5 +1,11 @@
 #include <frametap/frametap.h>
 #include <frametap/queue.h>
+#ifdef FRAMETAP_GUI_RECORDING
+#include <frametap/recording.h>
+#endif
+#ifdef FRAMETAP_GUI_RECEIVING
+#include <frametap/receiving.h>
+#endif
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -34,6 +40,32 @@ struct AppState {
 
   frametap::ImageData last_frame;
   std::string status;
+
+#ifdef FRAMETAP_GUI_RECORDING
+  // Recording lives entirely on the main thread: submit() is driven from the
+  // frame-queue drain, and start/stop from the UI buttons, so no locking is
+  // needed around the recorder.
+  std::unique_ptr<frametap::VideoRecorder> recorder;
+  bool recording = false;
+  std::string record_path;
+  frametap::Codec record_codec = frametap::Codec::h264;
+
+  // Network streaming controls.
+  bool stream_enabled = false;
+  int stream_protocol = 0; // 0=srt, 1=udp, 2=rtmp
+  char stream_url[256] = "srt://0.0.0.0:9000?mode=listener";
+  bool stream_save_file = true;
+#endif
+
+#ifdef FRAMETAP_GUI_RECEIVING
+  // Network receiving (live preview of an incoming SRT stream). The receiver
+  // worker pushes decoded frames into frame_queue, the same path capture uses.
+  // Default is caller mode so it connects to a streaming instance using the
+  // default listener URL (set the host for a remote sender).
+  std::unique_ptr<frametap::StreamReceiver> receiver;
+  bool receiving = false;
+  char receive_url[256] = "srt://127.0.0.1:9000";
+#endif
 };
 
 // ---------------------------------------------------------------------------
@@ -55,7 +87,136 @@ static void refresh_sources(AppState &s) {
   }
 }
 
+static void stop_capture(AppState &s); // defined below
+
+#ifdef FRAMETAP_GUI_RECORDING
+static frametap::StreamProtocol protocol_from_index(int i) {
+  switch (i) {
+  case 1:
+    return frametap::StreamProtocol::udp_ts;
+  case 2:
+    return frametap::StreamProtocol::rtmp;
+  default:
+    return frametap::StreamProtocol::srt;
+  }
+}
+
+static void start_recording(AppState &s) {
+  if (!s.tap) {
+    s.status = "Select a source before recording";
+    return;
+  }
+  try {
+    frametap::EncoderConfig cfg;
+    cfg.codec = s.record_codec;
+    // For a window, capture only that app's audio; for a monitor, capture all
+    // system audio (pid 0).
+    if (s.selected_kind == AppState::SourceKind::Window &&
+        s.selected_index >= 0 &&
+        s.selected_index < static_cast<int>(s.windows.size()))
+      cfg.audio_source_pid = s.windows[s.selected_index].pid;
+    if (s.stream_enabled) {
+      cfg.stream.enabled = true;
+      cfg.stream.protocol = protocol_from_index(s.stream_protocol);
+      cfg.stream.url = s.stream_url;
+      cfg.stream.also_save_file = s.stream_save_file;
+    }
+    s.record_path =
+        cfg.stream.enabled && !cfg.stream.also_save_file
+            ? std::string()
+            : frametap::default_recording_path(s.record_codec);
+    s.recorder =
+        std::make_unique<frametap::VideoRecorder>(s.record_path, cfg);
+    s.recording = true;
+    if (cfg.stream.enabled)
+      s.status = "Streaming to " + cfg.stream.url +
+                 (s.record_path.empty() ? "" : " + " + s.record_path) + "...";
+    else
+      s.status = "Recording to " + s.record_path + "...";
+  } catch (const std::exception &e) {
+    s.status = std::string("Record start failed: ") + e.what();
+    s.recorder.reset();
+    s.recording = false;
+  }
+}
+
+static void stop_recording(AppState &s) {
+  if (!s.recorder)
+    return;
+  try {
+    // finish() rethrows any error raised while encoding (e.g. the encoder
+    // rejecting the frame size), so a mid-recording failure surfaces here.
+    s.recorder->finish();
+    auto st = s.recorder->stats();
+    const std::string serr = s.recorder->stream_error();
+    if (!serr.empty()) {
+      s.status = "Stream error: " + serr;
+    } else {
+      const std::string where =
+          s.record_path.empty() ? "stream" : s.record_path;
+      s.status = "Saved " + where + " (" +
+                 std::to_string(st.frames_encoded) + " frames, " +
+                 std::to_string(st.bytes_written / (1024 * 1024)) + " MB)";
+    }
+  } catch (const std::exception &e) {
+    s.status = std::string("Recording failed: ") + e.what();
+  }
+  s.recorder.reset();
+  s.recording = false;
+}
+#endif // FRAMETAP_GUI_RECORDING
+
+#ifdef FRAMETAP_GUI_RECEIVING
+static void stop_receiving(AppState &s) {
+  if (!s.receiver)
+    return;
+  s.receiver->stop();
+  const std::string err = s.receiver->error();
+  const auto st = s.receiver->stats();
+  s.receiver.reset();
+  s.receiving = false;
+  if (!err.empty())
+    s.status = "Receive error: " + err;
+  else
+    s.status = "Receive stopped (" + std::to_string(st.frames_decoded) +
+               " frames)";
+}
+
+static void start_receiving(AppState &s) {
+  // A received stream is its own source; stop any capture/recording first.
+  stop_capture(s);
+  try {
+    frametap::ReceiverConfig cfg;
+    cfg.url = s.receive_url;
+    cfg.decode = true;
+    s.receiver = std::make_unique<frametap::StreamReceiver>(cfg);
+    s.receiver->on_frame([&s](const frametap::ImageData &img) {
+      frametap::Frame f;
+      f.image = img;
+      s.frame_queue.push(std::move(f));
+    });
+    s.receiver->start();
+    s.receiving = true;
+    s.selected_kind = AppState::SourceKind::None;
+    s.selected_index = -1;
+    s.status = std::string("Receiving from ") + s.receive_url +
+               " (waiting for sender)...";
+  } catch (const std::exception &e) {
+    s.status = std::string("Receive start failed: ") + e.what();
+    s.receiver.reset();
+    s.receiving = false;
+  }
+}
+#endif
+
 static void stop_capture(AppState &s) {
+#ifdef FRAMETAP_GUI_RECORDING
+  // Recording is bound to the active capture; tearing down the source ends it.
+  stop_recording(s);
+#endif
+#ifdef FRAMETAP_GUI_RECEIVING
+  stop_receiving(s);
+#endif
   if (s.tap) {
     s.tap->stop();
     s.tap.reset();
@@ -180,6 +341,23 @@ static void draw_sidebar(AppState &s) {
     refresh_sources(s);
   }
 
+#ifdef FRAMETAP_GUI_RECEIVING
+  ImGui::Spacing();
+  ImGui::SeparatorText("Receive");
+  ImGui::SetNextItemWidth(-1);
+  ImGui::InputText("##rxurl", s.receive_url, sizeof(s.receive_url));
+  if (s.receiving) {
+    if (ImGui::Button("Disconnect", ImVec2(-1, 0)))
+      stop_receiving(s);
+    const bool live = s.receiver && s.receiver->connected();
+    ImGui::TextDisabled("%s", live ? "Receiving (connected)"
+                                   : "Waiting for sender...");
+  } else {
+    if (ImGui::Button("Receive Stream", ImVec2(-1, 0)))
+      start_receiving(s);
+  }
+#endif
+
   ImGui::EndChild();
 }
 
@@ -222,6 +400,41 @@ static void draw_preview(AppState &s) {
   if (ImGui::Button("Save PNG")) {
     save_png(s);
   }
+
+#ifdef FRAMETAP_GUI_RECORDING
+  ImGui::SameLine();
+  if (s.recording) {
+    if (ImGui::Button("Stop Recording"))
+      stop_recording(s);
+  } else {
+    ImGui::BeginDisabled(!s.tap);
+    if (ImGui::Button("Record"))
+      start_recording(s);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80);
+    const char *codecs[] = {"H.264", "HEVC"};
+    int ci = s.record_codec == frametap::Codec::hevc ? 1 : 0;
+    if (ImGui::Combo("##codec", &ci, codecs, 2))
+      s.record_codec =
+          ci == 1 ? frametap::Codec::hevc : frametap::Codec::h264;
+
+    ImGui::SameLine();
+    ImGui::Checkbox("Stream", &s.stream_enabled);
+    if (s.stream_enabled) {
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(90);
+      const char *protos[] = {"SRT", "UDP-TS", "RTMP"};
+      ImGui::Combo("##proto", &s.stream_protocol, protos, 3);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(240);
+      ImGui::InputText("##url", s.stream_url, sizeof(s.stream_url));
+      ImGui::SameLine();
+      ImGui::Checkbox("Save file too", &s.stream_save_file);
+    }
+  }
+#endif
+
   ImGui::SameLine();
   ImGui::TextWrapped("%s", s.status.c_str());
 
@@ -284,6 +497,12 @@ int main() {
     {
       std::optional<frametap::Frame> frame;
       while (auto f = state.frame_queue.try_pop()) {
+#ifdef FRAMETAP_GUI_RECORDING
+        // Encode every frame (don't drop), unlike the preview which keeps only
+        // the latest.
+        if (state.recorder)
+          state.recorder->submit(*f);
+#endif
         frame = std::move(f);
       }
       if (frame) {
