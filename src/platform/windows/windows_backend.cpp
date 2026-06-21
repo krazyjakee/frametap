@@ -189,14 +189,54 @@ private:
   // -- DXGI streaming (monitor capture) ------------------------------------
 
   void dxgi_capture_loop(std::stop_token token) {
+    auto last_time = std::chrono::steady_clock::now();
+
+    // DXGI Desktop Duplication only surfaces a frame when the desktop content
+    // changes (signalled via LastPresentTime). On a static screen
+    // AcquireNextFrame returns WAIT_TIMEOUT indefinitely, so without this the
+    // callback would never fire on an idle desktop — unlike the macOS/Linux
+    // backends, which deliver frames continuously. We keep the most recent
+    // frame and re-deliver it when idle to preserve a steady cadence.
+    std::vector<uint8_t> last_rgba;
+    int last_w = 0, last_h = 0;
+    auto emit_cached = [&]() {
+      if (last_h == 0)
+        return;
+      auto now = std::chrono::steady_clock::now();
+      double duration_ms =
+          std::chrono::duration<double, std::milli>(now - last_time).count();
+      last_time = now;
+      Frame frame{
+          .image =
+              {
+                  .data = last_rgba,
+                  .width = static_cast<size_t>(last_w),
+                  .height = static_cast<size_t>(last_h),
+              },
+          .duration_ms = duration_ms,
+      };
+      callback_(frame);
+    };
+
+    // Seed an initial frame with a direct grab *before* taking the persistent
+    // duplication below (only one duplication per output may exist at a time),
+    // so consumers receive a first frame immediately even if nothing redraws.
+    {
+      ImageData seed = windows_screenshot_monitor(monitor_index_, region_);
+      if (seed.width && seed.height) {
+        last_w = static_cast<int>(seed.width);
+        last_h = static_cast<int>(seed.height);
+        last_rgba = std::move(seed.data);
+        emit_cached();
+      }
+    }
+
     DxgiState dxgi;
     if (!dxgi.init(monitor_index_)) {
       // Fall back to GDI polling for monitors
       gdi_monitor_capture_loop(token);
       return;
     }
-
-    auto last_time = std::chrono::steady_clock::now();
 
     while (!token.stop_requested()) {
       {
@@ -212,8 +252,10 @@ private:
       HRESULT hr = dxgi.duplication->AcquireNextFrame(100, &frame_info,
                                                        &resource);
 
-      if (hr == DXGI_ERROR_WAIT_TIMEOUT)
+      if (hr == DXGI_ERROR_WAIT_TIMEOUT) {
+        emit_cached();  // idle desktop: re-deliver last frame to keep cadence
         continue;
+      }
 
       if (hr == DXGI_ERROR_ACCESS_LOST) {
         // Desktop switch (e.g. UAC, lock screen, RDP)
@@ -226,10 +268,12 @@ private:
       if (FAILED(hr))
         continue;
 
-      // Only process if there are new pixels
+      // Only convert if there are new pixels; otherwise re-deliver the cached
+      // frame so the stream keeps a steady cadence on an idle desktop.
       if (frame_info.LastPresentTime.QuadPart == 0) {
         resource->Release();
         dxgi.duplication->ReleaseFrame();
+        emit_cached();
         continue;
       }
 
@@ -292,6 +336,11 @@ private:
         double duration_ms =
             std::chrono::duration<double, std::milli>(now - last_time).count();
         last_time = now;
+
+        // Refresh the idle-cadence cache with the latest pixels.
+        last_w = out_w;
+        last_h = out_h;
+        last_rgba = rgba;
 
         Frame frame{
             .image =
