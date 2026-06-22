@@ -45,6 +45,17 @@ The GUI and recording deps are git submodules — run `git submodule update
 On the first `scons record|cli|gui`, the vendored libsrt submodule is built once
 via `cmake` (encryption off, no OpenSSL); UDP/RTMP work without it.
 
+**Windows** recording/streaming/receiving (NVENC encode + NVDEC decode, video
+only — no audio backend yet) builds into `scons cli`/`scons gui`:
+- Build the GUI with `crt=static` (it links vcpkg's `glfw3:x64-windows-static`,
+  which uses the static CRT). The vendored libsrt is auto-built as `/MT` to
+  match; build the CLI with `crt=static` too when you need SRT.
+- The NVENC/NVDEC API version must not exceed the installed driver's. If
+  `OpenEncodeSessionEx`/decode fails with `INVALID_VERSION`, check out a
+  matching `nv-codec-headers` tag (e.g. `n13.0.19.0` for driver branch 5xx).
+- SRT latency is tunable per stream via `?latency=<ms>` on the URL (default 120
+  ms suits the lossy internet; drop to ~30 ms or less on a LAN).
+
 ## Architecture
 
 ### Backend abstraction
@@ -71,13 +82,13 @@ via `cmake` (encryption off, no OpenSSL); UDP/RTMP work without it.
 
 Headers are in `include/frametap/`. The main class is `frametap::FrameTap` with constructors for monitor, window, region, or primary-monitor capture. Key free functions: `get_monitors()`, `get_windows()`, `check_permissions()`.
 
-### Recording & streaming (Linux/NVENC)
+### Recording & streaming (Linux/NVENC · macOS/VideoToolbox · Windows/NVENC)
 
 `src/encode/` holds the GPU recording pipeline, compiled into the `record`
 example and (when NVENC headers are present) the CLI/GUI. It has **no
 ffmpeg/libav dependency**:
 
-- **NVENC** (`nvenc_encoder.cpp`) encodes RGBA → Annex-B H.264/HEVC; CUDA/NVENC are `dlopen`'d at runtime.
+- **NVENC** (`nvenc_encoder.cpp`) encodes RGBA → Annex-B H.264/HEVC; CUDA/NVENC are loaded at runtime via the cross-platform shim in `encode/dynlib.h` (`dlopen` on POSIX, `LoadLibrary` of `nvcuda.dll`/`nvEncodeAPI64.dll` on Windows). NVDEC (`decode/nvdec_decoder.cpp`) decodes the same way (`nvcuvid.dll`). The video encoder/decoder and audio capture are the only platform-specific pieces; muxers, AAC, and the SRT/UDP/RTMP transports are shared (sockets via `net_compat.h`). On Windows, audio capture and AAC are stubbed (`audio/null_capture.h`, `encode/aac_encoder_null.cpp`) so recordings/streams are video-only.
 - **Muxers** are hand-rolled: `mp4_muxer.cpp` (file), `ts_muxer.cpp` (MPEG-TS), and FLV inside `rtmp_sink.cpp`. `nal_util.cpp` converts Annex-B → length-prefixed and builds avcC/hvcC.
 - **AAC** (`aac_encoder.cpp`) wraps vendored vo-aacenc (Apache-2.0).
 - **Streaming** goes through the `StreamSink` interface (`stream_sink.h`): `TsSink` over UDP/SRT (`ts_sink.cpp`, `net_transport.cpp`) and `RtmpSink` over TCP. `NetworkStreamer` (`net_stream.cpp`) owns the worker thread + bounded queue. Sockets are cross-platform via `net_compat.h` (POSIX + Winsock).

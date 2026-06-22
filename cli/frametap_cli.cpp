@@ -354,7 +354,11 @@ static int run_record(const cli::Args &) {
 static std::string default_received_path() {
   std::time_t t = std::time(nullptr);
   std::tm tm{};
+#ifdef _WIN32
+  localtime_s(&tm, &t);
+#else
   localtime_r(&t, &tm);
+#endif
   char buf[64];
   std::strftime(buf, sizeof(buf), "received-%Y%m%d-%H%M%S.ts", &tm);
   return buf;

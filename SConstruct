@@ -40,6 +40,11 @@ if platform == 'win32' and target != 'android':
     env = Environment(
         CPPPATH=['include', 'src'],
         CXXFLAGS=['/std:c++20', '/W4', '/O2', '/EHsc', '/GS', '/sdl', crt_flag],
+        # <windows.h> (pulled in by winsock for the streaming transports) defines
+        # min()/max() macros that collide with std::min/std::max and
+        # numeric_limits::max; suppress them library-wide.
+        CPPDEFINES=['NOMINMAX', 'WIN32_LEAN_AND_MEAN',
+                    '_CRT_SECURE_NO_WARNINGS'],
     )
     if sanitize == 'address':
         env.Append(CXXFLAGS=['/fsanitize=address'])
@@ -124,6 +129,25 @@ def voaac_objects(base_env, objdir):
 _srt_install = 'vendor/srt/install'
 
 
+# Static libsrt file name differs by toolchain: GNU ar vs MSVC.
+_srt_lib_file = 'srt_static.lib' if platform == 'win32' else 'libsrt.a'
+
+
+def _find_cmake():
+    """A working cmake. On Windows, System32 sometimes shadows a broken stub
+    (no CMAKE_ROOT), so prefer a real install / the VS-bundled copy."""
+    import shutil
+    if platform == 'win32':
+        for c in (
+            r'C:\Program Files\CMake\bin\cmake.exe',
+            r'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7'
+            r'\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe',
+        ):
+            if os.path.isfile(c):
+                return c
+    return shutil.which('cmake')
+
+
 def build_vendored_srt(label):
     """One-time cmake build of the libsrt submodule into _srt_install."""
     src = 'vendor/srt'
@@ -131,9 +155,9 @@ def build_vendored_srt(label):
         print('%s: vendor/srt not initialized (run: git submodule update '
               '--init vendor/srt) -- building without SRT.' % label)
         return
-    import shutil
     import subprocess
-    if shutil.which('cmake') is None:
+    cmake = _find_cmake()
+    if cmake is None:
         print('%s: cmake not found; cannot build vendored libsrt.' % label)
         return
     build_dir = os.path.join(src, 'build')
@@ -141,7 +165,7 @@ def build_vendored_srt(label):
     print('%s: building vendored libsrt (one-time, ~1 min)...' % label)
     try:
         cmake_cmd = [
-            'cmake', '-S', src, '-B', build_dir,
+            cmake, '-S', src, '-B', build_dir,
             '-DENABLE_ENCRYPTION=OFF', '-DENABLE_APPS=OFF',
             '-DENABLE_SHARED=OFF', '-DENABLE_STATIC=ON',
             '-DENABLE_CXX_DEPS=OFF', '-DCMAKE_POSITION_INDEPENDENT_CODE=ON',
@@ -150,6 +174,17 @@ def build_vendored_srt(label):
             '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
             '-DCMAKE_INSTALL_PREFIX=' + prefix,
         ]
+        build_cmd = [cmake, '--build', build_dir, '--target', 'srt_static']
+        install_cmd = [cmake, '--install', build_dir]
+        if platform == 'win32':
+            # Force a 64-bit, static-CRT (/MT) build so the lib matches the
+            # GUI/CLI (which link vcpkg x64-windows-static + crt=static).
+            cmake_cmd += ['-A', 'x64',
+                          '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded']
+            build_cmd += ['--config', 'Release']
+            install_cmd += ['--config', 'Release']
+        else:
+            build_cmd += ['-j']
         # Match the macOS architecture the rest of the build targets so the
         # static lib isn't a single-arch mismatch at link time.
         if platform == 'darwin':
@@ -158,22 +193,25 @@ def build_vendored_srt(label):
             elif macos_arch in ('arm64', 'x86_64'):
                 cmake_cmd.append('-DCMAKE_OSX_ARCHITECTURES=' + macos_arch)
         subprocess.check_call(cmake_cmd)
-        subprocess.check_call(['cmake', '--build', build_dir,
-                               '--target', 'srt_static', '-j'])
-        subprocess.check_call(['cmake', '--install', build_dir])
+        subprocess.check_call(build_cmd)
+        subprocess.check_call(install_cmd)
     except Exception as e:
         print('%s: libsrt build failed (%s); continuing without SRT.'
               % (label, e))
 
 
 def enable_srt(an_env, label):
-    liba = os.path.join(_srt_install, 'lib', 'libsrt.a')
+    liba = os.path.join(_srt_install, 'lib', _srt_lib_file)
     if not os.path.isfile(liba):
         build_vendored_srt(label)
     if os.path.isfile(liba):
         an_env.Append(CPPPATH=[os.path.join(_srt_install, 'include')])
         an_env.Append(LIBPATH=[os.path.join(_srt_install, 'lib')])
-        an_env.Append(LIBS=['srt', 'pthread'])
+        if platform == 'win32':
+            # libsrt uses its built-in C++11 pthread shim; just needs Winsock.
+            an_env.Append(LIBS=['srt_static', 'ws2_32'])
+        else:
+            an_env.Append(LIBS=['srt', 'pthread'])
         an_env.Append(CPPDEFINES=['FRAMETAP_HAVE_SRT'])
         return
     try:
@@ -299,6 +337,10 @@ _rec_shared_srcs = [
 ]
 _rec_linux_srcs = ['src/encode/nvenc_encoder.cpp', 'src/audio/pw_capture.cpp']
 _rec_macos_srcs = ['src/encode/vt_encoder.mm', 'src/audio/ca_capture.mm']
+# Windows: NVENC video, but no system-audio backend / vo-aacenc build yet, so
+# audio capture is a header-only stub (null_capture.h) and AAC is the null
+# implementation (swapped in below). Recordings/streams are video-only for now.
+_rec_win_srcs = ['src/encode/nvenc_encoder.cpp']
 # Receive path (SRT in -> TS demux -> decode -> file/preview). The TS demux and
 # receiver are shared; the decoder is NVDEC on Linux, VideoToolbox on macOS.
 _rec_linux_recv_srcs = [
@@ -320,7 +362,16 @@ def recording_objects(an_env, objdir, with_receive):
     """Compile the send (+ optional receive) recording sources to objects under
     objdir. Returns the object list; the caller adds voaac_objects separately."""
     srcs = list(_rec_shared_srcs)
-    if platform == 'darwin':
+    if platform == 'win32':
+        # vo-aacenc isn't compiled under MSVC yet; use the null AAC instead.
+        srcs = ['src/encode/aac_encoder_null.cpp'
+                if s.endswith('aac_encoder.cpp') else s for s in srcs]
+        srcs += _rec_win_srcs
+        if with_receive:
+            # TS demux + receiver are shared; NVDEC decoder is ported to Windows
+            # (dlopen nvcuda/nvcuvid via the same shim as the encoder).
+            srcs += _rec_linux_recv_srcs
+    elif platform == 'darwin':
         srcs += _rec_macos_srcs
         if with_receive:
             srcs += _rec_macos_recv_srcs
@@ -408,15 +459,25 @@ if 'cli' in _targets and target != 'android':
         _cli_recv = _cli_rec  # receive path rides on the NVENC build
         if _cli_rec:
             cli_env.Append(LIBS=['dl'])
+    elif platform == 'win32':
+        # NVENC send + NVDEC receive, video-only (see GUI note above).
+        _cli_rec = enable_nvenc_headers(cli_env, 'CLI')
+        _cli_recv = _cli_rec
     if _cli_rec:
         cli_env.Append(CPPDEFINES=['FRAMETAP_CLI_RECORDING'])
         if _cli_recv:
             cli_env.Append(CPPDEFINES=['FRAMETAP_CLI_RECEIVING'])
-        cli_env.Append(CPPPATH=_voaac_incs)
-        enable_srt(cli_env, 'CLI')
-        cli_sources += (
-            recording_objects(cli_env, 'cli/obj', with_receive=_cli_recv)
-            + voaac_objects(cli_env, 'cli/obj/voaac'))
+        if platform == 'win32':
+            cli_env.Append(LIBS=['ws2_32'])
+            enable_srt(cli_env, 'CLI')
+            cli_sources += recording_objects(cli_env, 'cli/obj',
+                                             with_receive=_cli_recv)
+        else:
+            cli_env.Append(CPPPATH=_voaac_incs)
+            enable_srt(cli_env, 'CLI')
+            cli_sources += (
+                recording_objects(cli_env, 'cli/obj', with_receive=_cli_recv)
+                + voaac_objects(cli_env, 'cli/obj/voaac'))
 
 cli = cli_env.Program('cli/frametap', cli_sources)
 Depends(cli, lib)
@@ -468,16 +529,36 @@ if build_gui:
                   'recording. To enable it:\n'
                   '  git clone https://github.com/FFmpeg/nv-codec-headers '
                   'vendor/nv-codec-headers')
+    elif platform == 'win32':
+        # NVENC send + NVDEC receive (video-only: no PipeWire/vo-aacenc port
+        # yet). SRT rides on the vendored libsrt build below; UDP/RTMP/file
+        # work even without it.
+        _gui_rec = enable_nvenc_headers(gui_env, 'GUI')
+        _gui_recv = _gui_rec  # NVDEC decode is ported to Windows
+        if not _gui_rec:
+            print('GUI: nv-codec-headers not found; building without GPU '
+                  'recording. Clone it with:\n'
+                  '  git clone https://github.com/FFmpeg/nv-codec-headers '
+                  'vendor/nv-codec-headers')
     if _gui_rec:
         gui_env.Append(CPPDEFINES=['FRAMETAP_GUI_RECORDING'])
         if _gui_recv:
             gui_env.Append(CPPDEFINES=['FRAMETAP_GUI_RECEIVING'])
-        gui_env.Append(CPPPATH=_voaac_incs)
-        enable_srt(gui_env, 'GUI')
-        gui_sources = (
-            gui_sources
-            + recording_objects(gui_env, 'gui/obj', with_receive=_gui_recv)
-            + voaac_objects(gui_env, 'gui/obj/voaac'))
+        if platform == 'win32':
+            # Winsock for the streaming transports; null AAC means no voaac.
+            gui_env.Append(LIBS=['ws2_32'])
+            enable_srt(gui_env, 'GUI')  # SRT send + receive when libsrt present
+            gui_sources = (
+                gui_sources
+                + recording_objects(gui_env, 'gui/obj',
+                                    with_receive=_gui_recv))
+        else:
+            gui_env.Append(CPPPATH=_voaac_incs)
+            enable_srt(gui_env, 'GUI')
+            gui_sources = (
+                gui_sources
+                + recording_objects(gui_env, 'gui/obj', with_receive=_gui_recv)
+                + voaac_objects(gui_env, 'gui/obj/voaac'))
 
     if platform == 'darwin':
         gui_env.Append(LINKFLAGS=['-lobjc'])
